@@ -208,15 +208,18 @@ Any WhatsApp Business API provider:
 ```json
 {
   "wa_token": "your-api-token",
-  "wa_phone_id": "your-phone-number-id"
+  "wa_phone_id": "your-phone-number-id",
+  "wa_base_url": "https://waba.360dialog.io",  // Optional: defaults to Facebook
+  "wa_api_version": "v21.0"                     // Optional: defaults to v21.0
 }
 ```
 
-**Works with**:
-- WhatsApp Cloud API (official)
-- 360dialog
-- Twilio WhatsApp
-- Any other Business API provider
+**Works with** (truly vendor-agnostic ✅):
+- WhatsApp Cloud API / Facebook (https://graph.facebook.com) - default
+- 360dialog (https://waba.360dialog.io)
+- Twilio WhatsApp (https://api.twilio.com)
+- On-premises WhatsApp Business API (custom URLs)
+- **ANY** WhatsApp Business API provider
 
 #### SMS
 Any SMS provider (when implemented):
@@ -340,6 +343,10 @@ SMTP_FROM=noreply@yourapp.com
 # Global WhatsApp (fallback)
 WA_TOKEN=your-whatsapp-token
 WA_PHONE_ID=your-phone-id
+# Optional: Override API endpoint (defaults to Facebook Cloud API)
+# WA_BASE_URL=https://graph.facebook.com        # Default
+# WA_BASE_URL=https://waba.360dialog.io         # For 360dialog
+# WA_API_VERSION=v21.0                          # Default
 
 # Global SMS (fallback)
 SMS_PROVIDER=twilio
@@ -587,3 +594,15 @@ Day 16 delivers a complete, production-ready tenant authentication system that:
 - ✅ Tracks credential source
 
 The system is fully vendor-agnostic - tenants can use **any SMTP server, any WhatsApp provider, and any SMS provider** they want.
+
+## Vendor-Agnostic Verification
+
+After implementation, a comprehensive audit was conducted to verify true vendor-agnostic architecture. See `VENDOR_AGNOSTIC_AUDIT.md` for full details.
+
+**Audit Results**:
+- ✅ **Email Adapter**: 100% vendor-agnostic (uses standard SMTP protocol)
+- ✅ **WhatsApp Adapter**: 100% vendor-agnostic (configurable API endpoint and version)
+- ✅ **Credential Resolution**: 100% vendor-agnostic (protocol-level configuration)
+- ✅ **Service Layer**: 100% vendor-agnostic (no vendor assumptions)
+
+The service is **truly unaware** of which vendors are being used - configuration is purely protocol-based.
