@@ -18,11 +18,63 @@ type Config struct {
 	Database  DatabaseConfig
 	Templates TemplatesConfig
 	Security  SecurityConfig
+	Adapters  AdaptersConfig
 }
 
 // SecurityConfig holds security-related configuration
 type SecurityConfig struct {
 	EncryptionKey string
+}
+
+// AdaptersConfig holds adapter selection configuration
+// Allows choosing which adapter to use for each channel
+type AdaptersConfig struct {
+	Email    EmailAdapterConfig
+	WhatsApp WhatsAppAdapterConfig
+	SMS      SMSAdapterConfig
+}
+
+// EmailAdapterConfig holds email adapter configuration
+type EmailAdapterConfig struct {
+	// Default adapter name: "smtp" or "ses"
+	Default string
+
+	// SES-specific configuration
+	SES SESConfig
+}
+
+// WhatsAppAdapterConfig holds WhatsApp adapter configuration
+type WhatsAppAdapterConfig struct {
+	// Default adapter name: "whatsapp-cloud"
+	Default string
+}
+
+// SMSAdapterConfig holds SMS adapter configuration
+type SMSAdapterConfig struct {
+	// Default adapter name: "sns"
+	Default string
+
+	// SNS-specific configuration
+	SNS SNSConfig
+}
+
+// SESConfig holds AWS SES adapter configuration
+type SESConfig struct {
+	Region           string
+	FromEmail        string
+	ConfigurationSet string
+	AccessKeyID      string
+	SecretAccessKey  string
+	RoleARN          string
+}
+
+// SNSConfig holds AWS SNS adapter configuration
+type SNSConfig struct {
+	Region          string
+	SenderID        string
+	SMSType         string // "Transactional" or "Promotional"
+	AccessKeyID     string
+	SecretAccessKey string
 }
 
 // ServerConfig holds server-related configuration
@@ -139,6 +191,32 @@ func Load() (*Config, error) {
 		},
 		Security: SecurityConfig{
 			EncryptionKey: getEnv("ENCRYPTION_KEY", ""),
+		},
+		Adapters: AdaptersConfig{
+			Email: EmailAdapterConfig{
+				Default: getEnv("ADAPTER_EMAIL", "smtp"), // Default to SMTP
+				SES: SESConfig{
+					Region:           getEnv("AWS_SES_REGION", getEnv("AWS_REGION", "us-east-1")),
+					FromEmail:        getEnv("AWS_SES_FROM_EMAIL", getEnv("SMTP_FROM", "")),
+					ConfigurationSet: getEnv("AWS_SES_CONFIG_SET", ""),
+					AccessKeyID:      getEnv("AWS_SES_ACCESS_KEY_ID", getEnv("AWS_ACCESS_KEY_ID", "")),
+					SecretAccessKey:  getEnv("AWS_SES_SECRET_ACCESS_KEY", getEnv("AWS_SECRET_ACCESS_KEY", "")),
+					RoleARN:          getEnv("AWS_SES_ROLE_ARN", ""),
+				},
+			},
+			WhatsApp: WhatsAppAdapterConfig{
+				Default: getEnv("ADAPTER_WHATSAPP", "whatsapp-cloud"), // Default to Cloud API
+			},
+			SMS: SMSAdapterConfig{
+				Default: getEnv("ADAPTER_SMS", "sns"), // Default to SNS
+				SNS: SNSConfig{
+					Region:          getEnv("AWS_SNS_REGION", getEnv("AWS_REGION", "us-east-1")),
+					SenderID:        getEnv("AWS_SNS_SENDER_ID", ""),
+					SMSType:         getEnv("AWS_SNS_SMS_TYPE", "Promotional"),
+					AccessKeyID:     getEnv("AWS_SNS_ACCESS_KEY_ID", getEnv("AWS_ACCESS_KEY_ID", "")),
+					SecretAccessKey: getEnv("AWS_SNS_SECRET_ACCESS_KEY", getEnv("AWS_SECRET_ACCESS_KEY", "")),
+				},
+			},
 		},
 	}
 
