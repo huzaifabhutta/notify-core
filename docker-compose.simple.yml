@@ -1,0 +1,52 @@
+# Docker Compose for notify-core Simple Mode
+# No database required - configuration via environment variables
+
+version: '3.8'
+
+services:
+  notify:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
+    container_name: notify-simple
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Server Configuration
+      - PORT=8080
+      - ENV=${ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-console}
+
+      # API Keys (REQUIRED)
+      # Format: key1:tenant1,key2:tenant2
+      - API_KEYS=${API_KEYS:?API_KEYS is required}
+
+      # CORS Configuration
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+
+      # SMTP Configuration (REQUIRED)
+      - SMTP_HOST=${SMTP_HOST:?SMTP_HOST is required}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:?SMTP_USER is required}
+      - SMTP_PASS=${SMTP_PASS:?SMTP_PASS is required}
+      - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
+
+      # WhatsApp Configuration (optional)
+      - WA_TOKEN=${WA_TOKEN:-}
+      - WA_PHONE_ID=${WA_PHONE_ID:-}
+      - WA_BASE_URL=${WA_BASE_URL:-https://graph.facebook.com}
+      - WA_API_VERSION=${WA_API_VERSION:-v21.0}
+
+      # SMS Configuration (optional)
+      - SMS_PROVIDER=${SMS_PROVIDER:-twilio}
+      - SMS_API_KEY=${SMS_API_KEY:-}
+      - SMS_FROM=${SMS_FROM:-}
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
