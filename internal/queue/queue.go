@@ -20,9 +20,10 @@ const (
 )
 
 // Job represents a notification job in the queue
-type Job struct {
+// Generic type T allows type-safe job requests
+type Job[T any] struct {
 	ID        string
-	Request   interface{}
+	Request   T
 	Status    JobStatus
 	Error     error
 	CreatedAt time.Time
@@ -39,15 +40,17 @@ type Result struct {
 }
 
 // Handler is the function signature for processing jobs
-type Handler func(ctx context.Context, req interface{}) (messageID string, err error)
+// Generic type T allows type-safe request handling
+type Handler[T any] func(ctx context.Context, req T) (messageID string, err error)
 
 // Queue is an in-memory job queue with goroutine workers
-type Queue struct {
-	jobs       chan *Job
+// Generic type T ensures type safety for all enqueued jobs
+type Queue[T any] struct {
+	jobs       chan *Job[T]
 	results    chan *Result
-	jobStore   map[string]*Job
+	jobStore   map[string]*Job[T]
 	storeMu    sync.RWMutex
-	handler    Handler
+	handler    Handler[T]
 	workers    int
 	maxRetries int
 	wg         sync.WaitGroup
@@ -71,14 +74,15 @@ func DefaultConfig() Config {
 	}
 }
 
-// New creates a new job queue
-func New(handler Handler, cfg Config) *Queue {
+// New creates a new job queue with type safety
+// Generic type T specifies the request type that can be enqueued
+func New[T any](handler Handler[T], cfg Config) *Queue[T] {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	q := &Queue{
-		jobs:       make(chan *Job, cfg.BufferSize),
+	q := &Queue[T]{
+		jobs:       make(chan *Job[T], cfg.BufferSize),
 		results:    make(chan *Result, cfg.BufferSize),
-		jobStore:   make(map[string]*Job),
+		jobStore:   make(map[string]*Job[T]),
 		handler:    handler,
 		workers:    cfg.Workers,
 		maxRetries: cfg.MaxRetries,
@@ -100,8 +104,9 @@ func New(handler Handler, cfg Config) *Queue {
 }
 
 // Enqueue adds a job to the queue and returns immediately with job ID
-func (q *Queue) Enqueue(req interface{}) (string, error) {
-	job := &Job{
+// Type-safe: only accepts values of type T
+func (q *Queue[T]) Enqueue(req T) (string, error) {
+	job := &Job[T]{
 		ID:        uuid.New().String(),
 		Request:   req,
 		Status:    JobStatusPending,
@@ -127,7 +132,8 @@ func (q *Queue) Enqueue(req interface{}) (string, error) {
 }
 
 // GetJob returns the status of a job by ID
-func (q *Queue) GetJob(jobID string) (*Job, error) {
+// Returns type-safe Job[T] with the original request type
+func (q *Queue[T]) GetJob(jobID string) (*Job[T], error) {
 	q.storeMu.RLock()
 	defer q.storeMu.RUnlock()
 
@@ -142,7 +148,7 @@ func (q *Queue) GetJob(jobID string) (*Job, error) {
 }
 
 // worker processes jobs from the queue
-func (q *Queue) worker(id int) {
+func (q *Queue[T]) worker(id int) {
 	defer q.wg.Done()
 
 	for {
@@ -180,7 +186,7 @@ func (q *Queue) worker(id int) {
 }
 
 // processResults handles job results and retries
-func (q *Queue) processResults() {
+func (q *Queue[T]) processResults() {
 	defer q.wg.Done()
 
 	for {
@@ -222,7 +228,7 @@ func (q *Queue) processResults() {
 }
 
 // updateJobStatus updates the status of a job
-func (q *Queue) updateJobStatus(jobID string, status JobStatus, err error) {
+func (q *Queue[T]) updateJobStatus(jobID string, status JobStatus, err error) {
 	q.storeMu.Lock()
 	defer q.storeMu.Unlock()
 
@@ -236,7 +242,7 @@ func (q *Queue) updateJobStatus(jobID string, status JobStatus, err error) {
 }
 
 // Shutdown gracefully shuts down the queue
-func (q *Queue) Shutdown(ctx context.Context) error {
+func (q *Queue[T]) Shutdown(ctx context.Context) error {
 	q.cancel()
 
 	// Wait for workers to finish with timeout
@@ -257,7 +263,7 @@ func (q *Queue) Shutdown(ctx context.Context) error {
 }
 
 // Stats returns queue statistics
-func (q *Queue) Stats() map[string]int {
+func (q *Queue[T]) Stats() map[string]int {
 	q.storeMu.RLock()
 	defer q.storeMu.RUnlock()
 
