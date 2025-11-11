@@ -1,80 +1,95 @@
+# Docker Compose for notify-core Multi-Tenant Mode
+# Includes PostgreSQL database and notify-core service
+# For simple mode (no database), use: docker-compose -f docker-compose.simple.yml up
+
 version: '3.8'
 
 services:
-  notify-core:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: notify-core
-    ports:
-      - "8080:8080"
-    environment:
-      # Server
-      - PORT=8080
-      - ENV=production
-
-      # Authentication - REQUIRED
-      - API_KEYS=${API_KEYS:?API_KEYS environment variable must be set}
-
-      # CORS Configuration
-      - CORS_ORIGINS=${CORS_ORIGINS:-}
-
-      # SMTP Configuration - REQUIRED
-      - SMTP_HOST=${SMTP_HOST:?SMTP_HOST must be set}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:?SMTP_USER must be set}
-      - SMTP_PASS=${SMTP_PASS:?SMTP_PASS must be set}
-      - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
-
-      # WhatsApp Configuration (optional)
-      - WA_TOKEN=${WA_TOKEN:-}
-      - WA_PHONE_ID=${WA_PHONE_ID:-}
-
-      # SMS Configuration (optional)
-      - SMS_PROVIDER=${SMS_PROVIDER:-twilio}
-      - SMS_API_KEY=${SMS_API_KEY:-}
-      - SMS_FROM=${SMS_FROM:-}
-
-      # Database (optional for now)
-      - DB_URL=postgres://${DB_USER:-notify}:${DB_PASSWORD:?DB_PASSWORD must be set}@postgres:5432/${DB_NAME:-notify}?sslmode=disable
-
-      # Templates
-      - TEMPLATES_DIR=./templates
-    volumes:
-      - ./templates:/app/templates
-    restart: unless-stopped
-    networks:
-      - notify-network
-    depends_on:
-      - postgres
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: notify-postgres
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=${DB_USER:-notify}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
-      - POSTGRES_DB=${DB_NAME:-notify}
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: notify
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: notify
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - notify-network
+    ports:
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-notify}"]
+      test: ["CMD-SHELL", "pg_isready -U notify"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - notify-network
+
+  # notify-core Multi-Tenant Service
+  notify:
+    build:
+      context: .
+      dockerfile: Dockerfile.multitenant
+    container_name: notify-core
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Server Configuration
+      - PORT=8080
+      - ENV=${ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+
+      # Database Configuration
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=notify
+      - DB_PASSWORD=${DB_PASSWORD:-changeme}
+      - DB_NAME=notify
+      - DB_SSL_MODE=${DB_SSL_MODE:-disable}
+      - DB_MAX_CONNS=${DB_MAX_CONNS:-25}
+      - DB_MAX_IDLE=${DB_MAX_IDLE:-5}
+
+      # Security Configuration (REQUIRED)
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+
+      # Global SMTP Configuration (fallback)
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+
+      # Global WhatsApp Configuration (optional)
+      - WA_TOKEN=${WA_TOKEN}
+      - WA_PHONE_ID=${WA_PHONE_ID}
+      - WA_BASE_URL=${WA_BASE_URL:-https://graph.facebook.com}
+      - WA_API_VERSION=${WA_API_VERSION:-v21.0}
+
+      # Global SMS Configuration (optional)
+      - SMS_PROVIDER=${SMS_PROVIDER}
+      - SMS_API_KEY=${SMS_API_KEY}
+      - SMS_FROM=${SMS_FROM}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - notify-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  postgres_data:
+    driver: local
 
 networks:
   notify-network:
     driver: bridge
-
-volumes:
-  postgres_data:
