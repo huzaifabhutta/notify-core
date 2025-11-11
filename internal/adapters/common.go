@@ -16,8 +16,9 @@ type BaseRequest struct {
 }
 
 // Adapter is the base interface that all channel adapters must implement
+// Adapters send notifications and return a message ID for tracking
 type Adapter interface {
-	Send(ctx context.Context, req interface{}) error
+	Send(ctx context.Context, req interface{}) (messageID string, err error)
 	Name() string
 }
 
