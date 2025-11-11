@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/mail"
 	"os"
 	"strconv"
 
@@ -111,10 +112,48 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
-// Validate checks if required configuration is present
+// Validate checks if required configuration is present and valid
 func (c *Config) Validate() error {
-	if c.SMTP.Host == "" || c.SMTP.User == "" || c.SMTP.Password == "" {
-		return fmt.Errorf("SMTP configuration is incomplete")
+	// SMTP validation
+	if c.SMTP.Host == "" {
+		return fmt.Errorf("SMTP_HOST is required")
 	}
+	if c.SMTP.User == "" {
+		return fmt.Errorf("SMTP_USER is required")
+	}
+	if c.SMTP.Password == "" {
+		return fmt.Errorf("SMTP_PASS is required")
+	}
+	if c.SMTP.Port < 1 || c.SMTP.Port > 65535 {
+		return fmt.Errorf("invalid SMTP_PORT: must be between 1-65535, got %d", c.SMTP.Port)
+	}
+
+	// Validate SMTP_FROM email format
+	if c.SMTP.From != "" {
+		if _, err := mail.ParseAddress(c.SMTP.From); err != nil {
+			return fmt.Errorf("invalid SMTP_FROM email address: %w", err)
+		}
+	}
+
+	// Validate SMTP_USER email format (if it looks like an email)
+	if c.SMTP.User != "" {
+		if _, err := mail.ParseAddress(c.SMTP.User); err != nil {
+			// SMTP_USER might not be an email (could be username), so just warn
+			// Don't fail validation
+		}
+	}
+
+	// Templates directory validation
+	if c.Templates.Dir != "" {
+		if _, err := os.Stat(c.Templates.Dir); os.IsNotExist(err) {
+			return fmt.Errorf("templates directory does not exist: %s", c.Templates.Dir)
+		}
+	}
+
+	// Server port validation
+	if port, err := strconv.Atoi(c.Server.Port); err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid PORT: must be between 1-65535, got %s", c.Server.Port)
+	}
+
 	return nil
 }

@@ -13,24 +13,30 @@ services:
       - PORT=8080
       - ENV=production
 
-      # SMTP Configuration (use your own values)
-      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      # Authentication - REQUIRED
+      - API_KEYS=${API_KEYS:?API_KEYS environment variable must be set}
+
+      # CORS Configuration
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+
+      # SMTP Configuration - REQUIRED
+      - SMTP_HOST=${SMTP_HOST:?SMTP_HOST must be set}
       - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_USER=${SMTP_USER:?SMTP_USER must be set}
+      - SMTP_PASS=${SMTP_PASS:?SMTP_PASS must be set}
       - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
 
-      # WhatsApp Configuration
-      - WA_TOKEN=${WA_TOKEN}
-      - WA_PHONE_ID=${WA_PHONE_ID}
+      # WhatsApp Configuration (optional)
+      - WA_TOKEN=${WA_TOKEN:-}
+      - WA_PHONE_ID=${WA_PHONE_ID:-}
 
-      # SMS Configuration
+      # SMS Configuration (optional)
       - SMS_PROVIDER=${SMS_PROVIDER:-twilio}
-      - SMS_API_KEY=${SMS_API_KEY}
-      - SMS_FROM=${SMS_FROM}
+      - SMS_API_KEY=${SMS_API_KEY:-}
+      - SMS_FROM=${SMS_FROM:-}
 
       # Database (optional for now)
-      - DB_URL=${DB_URL:-postgres://notify:notify@postgres:5432/notify?sslmode=disable}
+      - DB_URL=postgres://${DB_USER:-notify}:${DB_PASSWORD:?DB_PASSWORD must be set}@postgres:5432/${DB_NAME:-notify}?sslmode=disable
 
       # Templates
       - TEMPLATES_DIR=./templates
@@ -51,9 +57,9 @@ services:
     image: postgres:15-alpine
     container_name: notify-postgres
     environment:
-      - POSTGRES_USER=notify
-      - POSTGRES_PASSWORD=notify
-      - POSTGRES_DB=notify
+      - POSTGRES_USER=${DB_USER:-notify}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - POSTGRES_DB=${DB_NAME:-notify}
     ports:
       - "5432:5432"
     volumes:
@@ -61,7 +67,7 @@ services:
     networks:
       - notify-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U notify"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-notify}"]
       interval: 10s
       timeout: 5s
       retries: 5

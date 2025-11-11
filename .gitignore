@@ -5,7 +5,7 @@
 *.so
 *.dylib
 notify-core
-server
+/server
 
 # Test binary
 *.test

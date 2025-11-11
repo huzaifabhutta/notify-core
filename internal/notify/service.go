@@ -28,8 +28,9 @@ type SendRequest struct {
 }
 
 // Adapter defines the interface for notification channels
+// Each adapter is responsible for handling its own request type
 type Adapter interface {
-	Send(ctx context.Context, req *SendRequest) error
+	Send(ctx context.Context, req interface{}) error
 	Name() string
 }
 
@@ -74,53 +75,16 @@ func (s *Service) Send(ctx context.Context, req *SendRequest) error {
 		return fmt.Errorf("unsupported channel: %s", req.Channel)
 	}
 
-	// Send notification - convert request based on channel type
-	var adapterReq interface{}
-	switch req.Channel {
-	case ChannelEmail:
-		// Import email package type locally to avoid import cycle
-		adapterReq = &struct {
-			To       string
-			Channel  interface{}
-			Template string
-			Subject  string
-			Data     map[string]interface{}
-			From     string
-		}{
-			To:       req.To,
-			Channel:  req.Channel,
-			Template: req.Template,
-			Subject:  req.Subject,
-			Data:     req.Data,
-			From:     req.From,
-		}
-	default:
-		adapterReq = req
-	}
-
-	if err := adapter.Send(ctx, adapterReq); err != nil {
+	// Send notification - pass SendRequest directly to adapter
+	// Adapter is responsible for type assertion and validation
+	if err := adapter.Send(ctx, req); err != nil {
 		return fmt.Errorf("failed to send via %s: %w", adapter.Name(), err)
 	}
 
 	return nil
 }
 
-// validateRequest validates the send request
-func (s *Service) validateRequest(req *SendRequest) error {
-	if req.To == "" {
-		return fmt.Errorf("recipient (to) is required")
-	}
-
-	if req.Channel == "" {
-		return fmt.Errorf("channel is required")
-	}
-
-	if req.Template == "" {
-		return fmt.Errorf("template is required")
-	}
-
-	return nil
-}
+// validateRequest is now in validation.go with comprehensive checks
 
 // GetSupportedChannels returns a list of supported channels
 func (s *Service) GetSupportedChannels() []string {

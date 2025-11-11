@@ -3,14 +3,20 @@ package email
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/smtp"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/huzaifabhutta/notify-core/internal/config"
 )
+
+// validTemplateNameRegex ensures template names contain only safe characters
+var validTemplateNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Adapter handles email notifications via SMTP
 type Adapter struct {
@@ -31,10 +37,10 @@ func (a *Adapter) Name() string {
 	return "email"
 }
 
-// SendRequest represents an email send request (local type to avoid import cycle)
+// SendRequest represents the expected structure for email adapter
+// This mirrors notify.SendRequest to avoid import cycles
 type SendRequest struct {
 	To       string
-	Channel  interface{}
 	Template string
 	Subject  string
 	Data     map[string]interface{}
@@ -43,10 +49,11 @@ type SendRequest struct {
 
 // Send sends an email notification
 func (a *Adapter) Send(ctx context.Context, req interface{}) error {
-	// Type assertion
-	sendReq, ok := req.(*SendRequest)
-	if !ok {
-		return fmt.Errorf("invalid request type for email adapter")
+	// Extract fields from request using duck typing
+	// This works with any struct that has these fields (like notify.SendRequest)
+	sendReq, err := extractSendRequest(req)
+	if err != nil {
+		return err
 	}
 
 	// Render template
@@ -75,19 +82,109 @@ func (a *Adapter) Send(ctx context.Context, req interface{}) error {
 	return nil
 }
 
+// extractSendRequest extracts SendRequest fields from any compatible struct using reflection
+// This allows the email adapter to work with notify.SendRequest without creating an import cycle
+func extractSendRequest(req interface{}) (SendRequest, error) {
+	// Try direct cast first (for testing with email.SendRequest)
+	if r, ok := req.(*SendRequest); ok {
+		return *r, nil
+	}
+	if r, ok := req.(SendRequest); ok {
+		return r, nil
+	}
+
+	// Use reflection to extract fields from any struct with matching fields
+	val := reflect.ValueOf(req)
+
+	// Handle pointer
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return SendRequest{}, fmt.Errorf("nil request pointer")
+		}
+		val = val.Elem()
+	}
+
+	// Must be a struct
+	if val.Kind() != reflect.Struct {
+		return SendRequest{}, fmt.Errorf("invalid request type: expected struct, got %T", req)
+	}
+
+	// Extract fields
+	result := SendRequest{}
+	typ := val.Type()
+
+	for i := 0; i < val.NumField(); i++ {
+		field := typ.Field(i)
+		fieldVal := val.Field(i)
+
+		switch field.Name {
+		case "To":
+			if field.Type.Kind() == reflect.String {
+				result.To = fieldVal.String()
+			}
+		case "Template":
+			if field.Type.Kind() == reflect.String {
+				result.Template = fieldVal.String()
+			}
+		case "Subject":
+			if field.Type.Kind() == reflect.String {
+				result.Subject = fieldVal.String()
+			}
+		case "From":
+			if field.Type.Kind() == reflect.String {
+				result.From = fieldVal.String()
+			}
+		case "Data":
+			if fieldVal.Type().Kind() == reflect.Map {
+				if data, ok := fieldVal.Interface().(map[string]interface{}); ok {
+					result.Data = data
+				}
+			}
+		}
+	}
+
+	// Validate required fields were found
+	if result.To == "" || result.Template == "" {
+		return SendRequest{}, fmt.Errorf("invalid request: missing required fields (To or Template)")
+	}
+
+	return result, nil
+}
+
 // renderTemplate renders an HTML template with the given data
 func (a *Adapter) renderTemplate(templateName string, data map[string]interface{}) (string, error) {
+	// SECURITY: Validate template name to prevent path traversal
+	if !validTemplateNameRegex.MatchString(templateName) {
+		return "", fmt.Errorf("invalid template name: must contain only letters, numbers, hyphens, and underscores")
+	}
+
 	templatePath := filepath.Join(a.templates.Dir, templateName+".html")
+
+	// SECURITY: Verify resolved path is within templates directory
+	absTemplatePath, err := filepath.Abs(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("invalid template path: %w", err)
+	}
+
+	absTemplateDir, err := filepath.Abs(a.templates.Dir)
+	if err != nil {
+		return "", fmt.Errorf("invalid template directory: %w", err)
+	}
+
+	// Check if the resolved path starts with the templates directory
+	if !strings.HasPrefix(absTemplatePath, absTemplateDir+string(filepath.Separator)) &&
+		absTemplatePath != absTemplateDir {
+		return "", errors.New("invalid template: path traversal detected")
+	}
 
 	tmpl, err := template.ParseFiles(templatePath)
 	if err != nil {
-		// If template file doesn't exist, use a simple default
-		return a.renderSimpleTemplate(data)
+		return "", fmt.Errorf("template not found: %s", templateName)
 	}
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", err
+		return "", fmt.Errorf("template execution failed")
 	}
 
 	return buf.String(), nil
