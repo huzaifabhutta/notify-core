@@ -17,6 +17,12 @@ type Config struct {
 	SMS       SMSConfig
 	Database  DatabaseConfig
 	Templates TemplatesConfig
+	Security  SecurityConfig
+}
+
+// SecurityConfig holds security-related configuration
+type SecurityConfig struct {
+	EncryptionKey string
 }
 
 // ServerConfig holds server-related configuration
@@ -127,6 +133,9 @@ func Load() (*Config, error) {
 		Templates: TemplatesConfig{
 			Dir: getEnv("TEMPLATES_DIR", "./templates"),
 		},
+		Security: SecurityConfig{
+			EncryptionKey: getEnv("ENCRYPTION_KEY", ""),
+		},
 	}
 
 	return cfg, nil
@@ -202,6 +211,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Database.MaxIdle < 0 || c.Database.MaxIdle > c.Database.MaxConns {
 		return fmt.Errorf("DB_MAX_IDLE must be between 0 and DB_MAX_CONNS (%d), got %d", c.Database.MaxConns, c.Database.MaxIdle)
+	}
+
+	// Security validation
+	if c.Security.EncryptionKey == "" {
+		return fmt.Errorf("ENCRYPTION_KEY is required for encrypting sensitive data")
+	}
+	if len(c.Security.EncryptionKey) < 32 {
+		return fmt.Errorf("ENCRYPTION_KEY must be at least 32 characters for AES-256 encryption, got %d", len(c.Security.EncryptionKey))
 	}
 
 	return nil

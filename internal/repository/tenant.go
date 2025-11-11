@@ -13,25 +13,31 @@ import (
 	"fmt"
 	"time"
 
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/huzaifabhutta/notify-core/internal/database"
 	"github.com/huzaifabhutta/notify-core/internal/models"
+	"github.com/huzaifabhutta/notify-core/internal/security"
 )
 
 // TenantRepository handles tenant data access
 type TenantRepository struct {
-	db *database.DB
+	db            *database.DB
+	encryptionKey string
 }
 
 // NewTenantRepository creates a new tenant repository
-func NewTenantRepository(db *database.DB) *TenantRepository {
-	return &TenantRepository{db: db}
+func NewTenantRepository(db *database.DB, encryptionKey string) *TenantRepository {
+	return &TenantRepository{
+		db:            db,
+		encryptionKey: encryptionKey,
+	}
 }
 
-// Create creates a new tenant
-func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantRequest) (*models.Tenant, error) {
-	// Generate API key
-	apiKey := uuid.New().String()
+// Create creates a new tenant with hashed API key and encrypted credentials
+func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantRequest) (*models.Tenant, string, error) {
+	const maxRetries = 3
 
 	query := `
 		INSERT INTO tenants (
@@ -46,42 +52,86 @@ func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantR
 	`
 
 	now := time.Now()
-	tenant := &models.Tenant{
-		Name:   req.Name,
-		APIKey: apiKey,
+	var tenant *models.Tenant
+	var plainAPIKey string
+	var err error
 
-		SMTPHost:     req.SMTPHost,
-		SMTPPort:     req.SMTPPort,
-		SMTPUser:     req.SMTPUser,
-		SMTPPassword: req.SMTPPassword,
-		SMTPFrom:     req.SMTPFrom,
+	// Retry loop for potential UUID collisions
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Generate plain API key
+		plainAPIKey = uuid.New().String()
 
-		WAToken:   req.WAToken,
-		WAPhoneID: req.WAPhoneID,
+		// Hash API key for storage
+		hashedAPIKey, err := security.HashAPIKey(plainAPIKey)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to hash API key: %w", err)
+		}
 
-		SMSProvider: req.SMSProvider,
-		SMSAPIKey:   req.SMSAPIKey,
-		SMSSenderID: req.SMSSenderID,
+		// Encrypt sensitive credentials
+		encryptedSMTPPassword, err := security.EncryptIfNotEmpty(req.SMTPPassword, r.encryptionKey)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to encrypt SMTP password: %w", err)
+		}
 
-		Active: true,
+		encryptedWAToken, err := security.EncryptIfNotEmpty(req.WAToken, r.encryptionKey)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to encrypt WhatsApp token: %w", err)
+		}
+
+		encryptedSMSAPIKey, err := security.EncryptIfNotEmpty(req.SMSAPIKey, r.encryptionKey)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to encrypt SMS API key: %w", err)
+		}
+
+		tenant = &models.Tenant{
+			Name:   req.Name,
+			APIKey: hashedAPIKey, // Store hashed version
+
+			SMTPHost:     req.SMTPHost,
+			SMTPPort:     req.SMTPPort,
+			SMTPUser:     req.SMTPUser,
+			SMTPPassword: encryptedSMTPPassword, // Store encrypted
+			SMTPFrom:     req.SMTPFrom,
+
+			WAToken:   encryptedWAToken, // Store encrypted
+			WAPhoneID: req.WAPhoneID,
+
+			SMSProvider: req.SMSProvider,
+			SMSAPIKey:   encryptedSMSAPIKey, // Store encrypted
+			SMSSenderID: req.SMSSenderID,
+
+			Active: true,
+		}
+
+		err = r.db.QueryRowContext(ctx, query,
+			tenant.Name, tenant.APIKey,
+			tenant.SMTPHost, tenant.SMTPPort, tenant.SMTPUser, tenant.SMTPPassword, tenant.SMTPFrom,
+			tenant.WAToken, tenant.WAPhoneID,
+			tenant.SMSProvider, tenant.SMSAPIKey, tenant.SMSSenderID,
+			tenant.Active, now, now,
+		).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt)
+
+		if err == nil {
+			break // Success
+		}
+
+		// Check if it's a unique constraint error on api_key
+		if strings.Contains(err.Error(), "unique constraint") && strings.Contains(err.Error(), "api_key") {
+			// UUID collision - retry with new UUID
+			if attempt < maxRetries-1 {
+				continue
+			}
+		}
+
+		// Different error or max retries reached
+		return nil, "", fmt.Errorf("failed to create tenant after %d attempts: %w", attempt+1, err)
 	}
 
-	err := r.db.QueryRowContext(ctx, query,
-		tenant.Name, tenant.APIKey,
-		tenant.SMTPHost, tenant.SMTPPort, tenant.SMTPUser, tenant.SMTPPassword, tenant.SMTPFrom,
-		tenant.WAToken, tenant.WAPhoneID,
-		tenant.SMSProvider, tenant.SMSAPIKey, tenant.SMSSenderID,
-		tenant.Active, now, now,
-	).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
-	}
-
-	return tenant, nil
+	// Return plain API key to user (only time they see it)
+	return tenant, plainAPIKey, nil
 }
 
-// GetByID retrieves a tenant by ID
+// GetByID retrieves a tenant by ID and decrypts sensitive credentials
 func (r *TenantRepository) GetByID(ctx context.Context, id int) (*models.Tenant, error) {
 	query := `
 		SELECT
@@ -110,11 +160,18 @@ func (r *TenantRepository) GetByID(ctx context.Context, id int) (*models.Tenant,
 		return nil, fmt.Errorf("failed to get tenant: %w", err)
 	}
 
+	// Decrypt sensitive credentials before returning
+	if err := r.decryptTenantCredentials(tenant); err != nil {
+		return nil, fmt.Errorf("failed to decrypt tenant credentials: %w", err)
+	}
+
 	return tenant, nil
 }
 
-// GetByAPIKey retrieves a tenant by API key
-func (r *TenantRepository) GetByAPIKey(ctx context.Context, apiKey string) (*models.Tenant, error) {
+// GetByAPIKey retrieves a tenant by comparing plain API key with hashed keys
+// Note: This iterates through active tenants to compare hashes. For large tenant counts,
+// consider using HMAC instead of bcrypt for O(1) lookups, or implement caching.
+func (r *TenantRepository) GetByAPIKey(ctx context.Context, plainAPIKey string) (*models.Tenant, error) {
 	query := `
 		SELECT
 			id, name, api_key,
@@ -123,26 +180,45 @@ func (r *TenantRepository) GetByAPIKey(ctx context.Context, apiKey string) (*mod
 			sms_provider, sms_api_key, sms_sender_id,
 			active, created_at, updated_at
 		FROM tenants
-		WHERE api_key = $1 AND active = true
+		WHERE active = true
 	`
 
-	tenant := &models.Tenant{}
-	err := r.db.QueryRowContext(ctx, query, apiKey).Scan(
-		&tenant.ID, &tenant.Name, &tenant.APIKey,
-		&tenant.SMTPHost, &tenant.SMTPPort, &tenant.SMTPUser, &tenant.SMTPPassword, &tenant.SMTPFrom,
-		&tenant.WAToken, &tenant.WAPhoneID,
-		&tenant.SMSProvider, &tenant.SMSAPIKey, &tenant.SMSSenderID,
-		&tenant.Active, &tenant.CreatedAt, &tenant.UpdatedAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("tenant not found or inactive")
-	}
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tenant by API key: %w", err)
+		return nil, fmt.Errorf("failed to query tenants: %w", err)
+	}
+	defer rows.Close()
+
+	// Iterate through active tenants and compare API key hashes
+	for rows.Next() {
+		tenant := &models.Tenant{}
+		err := rows.Scan(
+			&tenant.ID, &tenant.Name, &tenant.APIKey,
+			&tenant.SMTPHost, &tenant.SMTPPort, &tenant.SMTPUser, &tenant.SMTPPassword, &tenant.SMTPFrom,
+			&tenant.WAToken, &tenant.WAPhoneID,
+			&tenant.SMSProvider, &tenant.SMSAPIKey, &tenant.SMSSenderID,
+			&tenant.Active, &tenant.CreatedAt, &tenant.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan tenant: %w", err)
+		}
+
+		// Compare plain API key with hashed key
+		if err := security.CompareAPIKey(tenant.APIKey, plainAPIKey); err == nil {
+			// Match found - decrypt sensitive credentials before returning
+			if err := r.decryptTenantCredentials(tenant); err != nil {
+				return nil, fmt.Errorf("failed to decrypt tenant credentials: %w", err)
+			}
+			return tenant, nil
+		}
 	}
 
-	return tenant, nil
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tenants: %w", err)
+	}
+
+	// No match found
+	return nil, fmt.Errorf("tenant not found or inactive")
 }
 
 // List retrieves all tenants with optional filters
@@ -192,7 +268,7 @@ func (r *TenantRepository) List(ctx context.Context, activeOnly bool) ([]*models
 	return tenants, nil
 }
 
-// Update updates a tenant
+// Update updates a tenant with encryption for sensitive fields
 func (r *TenantRepository) Update(ctx context.Context, id int, req *models.UpdateTenantRequest) (*models.Tenant, error) {
 	// Build dynamic query based on provided fields
 	query := "UPDATE tenants SET updated_at = $1"
@@ -224,8 +300,13 @@ func (r *TenantRepository) Update(ctx context.Context, id int, req *models.Updat
 	}
 
 	if req.SMTPPassword != nil {
+		// Encrypt SMTP password before storing
+		encryptedPassword, err := security.EncryptString(*req.SMTPPassword, r.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt SMTP password: %w", err)
+		}
 		query += fmt.Sprintf(", smtp_password = $%d", argCount)
-		args = append(args, *req.SMTPPassword)
+		args = append(args, encryptedPassword)
 		argCount++
 	}
 
@@ -236,8 +317,13 @@ func (r *TenantRepository) Update(ctx context.Context, id int, req *models.Updat
 	}
 
 	if req.WAToken != nil {
+		// Encrypt WhatsApp token before storing
+		encryptedToken, err := security.EncryptString(*req.WAToken, r.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt WhatsApp token: %w", err)
+		}
 		query += fmt.Sprintf(", wa_token = $%d", argCount)
-		args = append(args, *req.WAToken)
+		args = append(args, encryptedToken)
 		argCount++
 	}
 
@@ -254,8 +340,13 @@ func (r *TenantRepository) Update(ctx context.Context, id int, req *models.Updat
 	}
 
 	if req.SMSAPIKey != nil {
+		// Encrypt SMS API key before storing
+		encryptedAPIKey, err := security.EncryptString(*req.SMSAPIKey, r.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt SMS API key: %w", err)
+		}
 		query += fmt.Sprintf(", sms_api_key = $%d", argCount)
-		args = append(args, *req.SMSAPIKey)
+		args = append(args, encryptedAPIKey)
 		argCount++
 	}
 
@@ -279,7 +370,7 @@ func (r *TenantRepository) Update(ctx context.Context, id int, req *models.Updat
 		return nil, fmt.Errorf("failed to update tenant: %w", err)
 	}
 
-	// Fetch updated tenant
+	// Fetch updated tenant (will be decrypted by GetByID)
 	return r.GetByID(ctx, id)
 }
 
@@ -300,5 +391,36 @@ func (r *TenantRepository) HardDelete(ctx context.Context, id int) error {
 	if err != nil {
 		return fmt.Errorf("failed to hard delete tenant: %w", err)
 	}
+	return nil
+}
+
+// decryptTenantCredentials decrypts sensitive credentials in a tenant object
+func (r *TenantRepository) decryptTenantCredentials(tenant *models.Tenant) error {
+	var err error
+
+	// Decrypt SMTP password
+	if tenant.SMTPPassword != "" {
+		tenant.SMTPPassword, err = security.DecryptString(tenant.SMTPPassword, r.encryptionKey)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt SMTP password: %w", err)
+		}
+	}
+
+	// Decrypt WhatsApp token
+	if tenant.WAToken != "" {
+		tenant.WAToken, err = security.DecryptString(tenant.WAToken, r.encryptionKey)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt WhatsApp token: %w", err)
+		}
+	}
+
+	// Decrypt SMS API key
+	if tenant.SMSAPIKey != "" {
+		tenant.SMSAPIKey, err = security.DecryptString(tenant.SMSAPIKey, r.encryptionKey)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt SMS API key: %w", err)
+		}
+	}
+
 	return nil
 }
