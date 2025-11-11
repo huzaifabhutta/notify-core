@@ -130,11 +130,13 @@ func TestClient_Send_Success(t *testing.T) {
 			t.Errorf("Expected to 'user@example.com', got %s", notif.To)
 		}
 
-		// Return success response
-		resp := Response{
-			Success:   true,
-			Message:   "Notification sent successfully",
-			MessageID: "msg-123",
+		// Return success response (new API format)
+		resp := map[string]interface{}{
+			"status":     "success",
+			"message":    "Notification sent successfully",
+			"message_id": "msg-123",
+			"channel":    "email",
+			"timestamp":  time.Now().Format(time.RFC3339),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -162,8 +164,8 @@ func TestClient_Send_Success(t *testing.T) {
 		t.Fatalf("Send() error = %v", err)
 	}
 
-	if !resp.Success {
-		t.Error("Expected success = true")
+	if !resp.IsSuccess() {
+		t.Errorf("Expected status 'success', got %s", resp.Status)
 	}
 
 	if resp.Message != "Notification sent successfully" {
@@ -173,14 +175,20 @@ func TestClient_Send_Success(t *testing.T) {
 	if resp.MessageID != "msg-123" {
 		t.Errorf("Expected message_id 'msg-123', got %s", resp.MessageID)
 	}
+
+	if resp.Channel != "email" {
+		t.Errorf("Expected channel 'email', got %s", resp.Channel)
+	}
 }
 
 func TestClient_Send_Error(t *testing.T) {
 	// Create mock server that returns an error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		errResp := ErrorResponse{
-			Error:   "INVALID_REQUEST",
-			Message: "Invalid email address",
+		errResp := map[string]interface{}{
+			"status":    "error",
+			"error":     "INVALID_REQUEST",
+			"message":   "Invalid email address",
+			"timestamp": time.Now().Format(time.RFC3339),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -218,7 +226,11 @@ func TestClient_SendEmail(t *testing.T) {
 			t.Errorf("Expected channel 'email', got %s", notif.Channel)
 		}
 
-		resp := Response{Success: true, Message: "Sent"}
+		resp := map[string]interface{}{
+			"status":  "success",
+			"message": "Sent",
+			"channel": "email",
+		}
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()

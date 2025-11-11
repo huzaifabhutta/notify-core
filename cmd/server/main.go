@@ -321,9 +321,11 @@ func customErrorHandler(c *fiber.Ctx, err error) error {
 		Int("status", code).
 		Msg("Request error")
 
-	// Return safe error to client
+	// Return safe error to client (standardized format)
 	return c.Status(code).JSON(fiber.Map{
-		"error":   errorCode,
-		"message": message,
+		"status":    "error",
+		"error":     errorCode,
+		"message":   message,
+		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }

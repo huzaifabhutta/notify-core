@@ -46,15 +46,24 @@ type Notification struct {
 
 // Response represents the API response
 type Response struct {
-	Success   bool   `json:"success"`
+	Status    string `json:"status"`            // "success" or "error"
 	Message   string `json:"message"`
 	MessageID string `json:"message_id,omitempty"`
+	Channel   string `json:"channel,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
 }
 
 // ErrorResponse represents an error response
 type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	Status    string `json:"status"`    // "error"
+	Error     string `json:"error"`     // Error code
+	Message   string `json:"message"`   // Error message
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// IsSuccess returns true if the response status is "success"
+func (r *Response) IsSuccess() bool {
+	return r.Status == "success"
 }
 
 // Send sends a notification

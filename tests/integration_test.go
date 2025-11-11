@@ -48,19 +48,26 @@ func TestFullEmailFlow(t *testing.T) {
 		var req notify.SendRequest
 		if err := c.BodyParser(&req); err != nil {
 			return c.Status(400).JSON(fiber.Map{
-				"error": "Invalid request",
+				"status":  "error",
+				"error":   "INVALID_REQUEST",
+				"message": "Invalid request",
 			})
 		}
 
-		if err := notifyService.Send(c.Context(), &req); err != nil {
+		resp, err := notifyService.Send(c.Context(), &req)
+		if err != nil {
 			return c.Status(500).JSON(fiber.Map{
-				"error": err.Error(),
+				"status":  "error",
+				"error":   "SEND_FAILED",
+				"message": err.Error(),
 			})
 		}
 
 		return c.JSON(fiber.Map{
-			"success": true,
-			"message": "Notification sent successfully",
+			"status":     "success",
+			"message":    "Notification sent successfully",
+			"message_id": resp.MessageID,
+			"channel":    resp.Channel,
 		})
 	})
 
@@ -340,22 +347,32 @@ func TestMultiTenant(t *testing.T) {
 	app.Post("/send", auth.Middleware(validAPIKeys), func(c *fiber.Ctx) error {
 		var req notify.SendRequest
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+			return c.Status(400).JSON(fiber.Map{
+				"status":  "error",
+				"error":   "INVALID_REQUEST",
+				"message": "Invalid request",
+			})
 		}
 
 		// Get tenant from auth middleware
 		tenantID := c.Locals("tenant_id")
 
-		if err := notifyService.Send(c.Context(), &req); err != nil {
+		resp, err := notifyService.Send(c.Context(), &req)
+		if err != nil {
 			return c.Status(500).JSON(fiber.Map{
-				"error":  err.Error(),
-				"tenant": tenantID,
+				"status":  "error",
+				"error":   "SEND_FAILED",
+				"message": err.Error(),
+				"tenant":  tenantID,
 			})
 		}
 
 		return c.JSON(fiber.Map{
-			"success": true,
-			"tenant":  tenantID,
+			"status":     "success",
+			"message":    "Notification sent successfully",
+			"message_id": resp.MessageID,
+			"channel":    resp.Channel,
+			"tenant":     tenantID,
 		})
 	})
 
@@ -498,14 +515,28 @@ func BenchmarkFullFlow(b *testing.B) {
 	app.Post("/send", auth.Middleware(validAPIKeys), func(c *fiber.Ctx) error {
 		var req notify.SendRequest
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+			return c.Status(400).JSON(fiber.Map{
+				"status":  "error",
+				"error":   "INVALID_REQUEST",
+				"message": "Invalid request",
+			})
 		}
 
-		if err := notifyService.Send(c.Context(), &req); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		resp, err := notifyService.Send(c.Context(), &req)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"status":  "error",
+				"error":   "SEND_FAILED",
+				"message": err.Error(),
+			})
 		}
 
-		return c.JSON(fiber.Map{"success": true})
+		return c.JSON(fiber.Map{
+			"status":     "success",
+			"message":    "Notification sent successfully",
+			"message_id": resp.MessageID,
+			"channel":    resp.Channel,
+		})
 	})
 
 	req := notify.SendRequest{
