@@ -52,7 +52,7 @@ func TestCompareAPIKey(t *testing.T) {
 }
 
 func TestEncryptDecryptString(t *testing.T) {
-	key := "this-is-a-32-character-key-12"
+	key := "my-32-char-encryption-key-123456"
 	plaintext := "sensitive-data-12345"
 
 	// Test encryption
@@ -87,7 +87,7 @@ func TestEncryptString_ShortKey(t *testing.T) {
 }
 
 func TestDecryptString_InvalidCiphertext(t *testing.T) {
-	key := "this-is-a-32-character-key-12"
+	key := "my-32-char-encryption-key-123456"
 
 	_, err := DecryptString("invalid-ciphertext", key)
 	if err == nil {
@@ -96,8 +96,8 @@ func TestDecryptString_InvalidCiphertext(t *testing.T) {
 }
 
 func TestDecryptString_WrongKey(t *testing.T) {
-	key1 := "this-is-a-32-character-key-12"
-	key2 := "different-32-character-key-12"
+	key1 := "my-32-char-encryption-key-123456"
+	key2 := "different-encryption-key-1234567"
 	plaintext := "sensitive-data"
 
 	encrypted, err := EncryptString(plaintext, key1)
@@ -112,7 +112,7 @@ func TestDecryptString_WrongKey(t *testing.T) {
 }
 
 func TestEncryptIfNotEmpty(t *testing.T) {
-	key := "this-is-a-32-character-key-12"
+	key := "my-32-char-encryption-key-123456"
 
 	// Test with non-empty string
 	encrypted, err := EncryptIfNotEmpty("test", key)
@@ -143,7 +143,7 @@ func TestHashAPIKey_EmptyString(t *testing.T) {
 }
 
 func TestEncryptString_Unicode(t *testing.T) {
-	key := "this-is-a-32-character-key-12"
+	key := "my-32-char-encryption-key-123456"
 	plaintext := "测试数据 テスト データ 🚀"
 
 	encrypted, err := EncryptString(plaintext, key)
@@ -162,7 +162,7 @@ func TestEncryptString_Unicode(t *testing.T) {
 }
 
 func TestEncryptString_LongText(t *testing.T) {
-	key := "this-is-a-32-character-key-12"
+	key := "my-32-char-encryption-key-123456"
 	plaintext := strings.Repeat("This is a long text for testing encryption. ", 100)
 
 	encrypted, err := EncryptString(plaintext, key)
@@ -181,7 +181,7 @@ func TestEncryptString_LongText(t *testing.T) {
 }
 
 func TestEncryptString_SpecialCharacters(t *testing.T) {
-	key := "this-is-a-32-character-key-12"
+	key := "my-32-char-encryption-key-123456"
 	plaintext := "!@#$%^&*()_+-=[]{}|;':\",./<>?`~"
 
 	encrypted, err := EncryptString(plaintext, key)

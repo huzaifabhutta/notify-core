@@ -13,6 +13,9 @@ import (
 
 // HashAPIKey hashes an API key using bcrypt
 func HashAPIKey(apiKey string) (string, error) {
+	if apiKey == "" {
+		return "", fmt.Errorf("API key cannot be empty")
+	}
 	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(apiKey), bcrypt.DefaultCost)
 	if err != nil {
 		return "", fmt.Errorf("failed to hash API key: %w", err)
