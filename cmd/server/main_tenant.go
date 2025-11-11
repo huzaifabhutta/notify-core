@@ -10,9 +10,14 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/google/uuid"
+	_ "github.com/huzaifabhutta/notify-core/internal/adapters/email/ses"   // Register SES adapter
+	_ "github.com/huzaifabhutta/notify-core/internal/adapters/email/smtp"  // Register SMTP adapter
+	_ "github.com/huzaifabhutta/notify-core/internal/adapters/sms/sns"     // Register SNS adapter
+	_ "github.com/huzaifabhutta/notify-core/internal/adapters/whatsapp/cloud" // Register WhatsApp adapter
 	"github.com/huzaifabhutta/notify-core/internal/config"
 	"github.com/huzaifabhutta/notify-core/internal/database"
 	appErrors "github.com/huzaifabhutta/notify-core/internal/errors"
+	"github.com/huzaifabhutta/notify-core/internal/health"
 	appLogger "github.com/huzaifabhutta/notify-core/internal/logger"
 	"github.com/huzaifabhutta/notify-core/internal/middleware"
 	"github.com/huzaifabhutta/notify-core/internal/repository"
@@ -62,7 +67,15 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 	tenantService := services.NewTenantService(tenantRepo, appLogger.Logger)
 
 	credentialResolver := services.NewCredentialResolver(cfg)
-	notifyService := services.NewNotifyService(cfg, credentialResolver, appLogger.Logger)
+	// Use V2 service with adapter registry
+	notifyService := services.NewNotifyServiceV2(cfg, credentialResolver, appLogger.Logger)
+
+	// Initialize health checker
+	healthChecker := health.NewChecker(&health.Config{
+		Timeout:        5 * time.Second,
+		EnableAdapters: true,
+		EnableDatabase: false, // TODO: Add database health check in future
+	}, appLogger.Logger)
 
 	// Initialize middleware
 	tenantAuth := middleware.NewTenantAuth(tenantService, appLogger.Logger)
@@ -72,13 +85,18 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 	// API v2 routes (with tenant authentication from database)
 	v2 := app.Group("/v2")
 
-	// Health check (no auth required)
+	// Comprehensive health check (no auth required)
 	v2.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"status":  "healthy",
-			"version": "2.0.0",
-			"mode":    "multi-tenant",
-		})
+		report := healthChecker.Check(c.UserContext())
+
+		// Determine HTTP status based on health
+		statusCode := fiber.StatusOK
+		switch report.Status {
+		case health.StatusUnhealthy, health.StatusUnknown:
+			statusCode = fiber.StatusServiceUnavailable
+		}
+
+		return c.Status(statusCode).JSON(report)
 	})
 
 	// Tenant management routes (requires tenant auth)
