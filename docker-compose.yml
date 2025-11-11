@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  notify-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notify-core
+    ports:
+      - "8080:8080"
+    environment:
+      # Server
+      - PORT=8080
+      - ENV=production
+
+      # SMTP Configuration (use your own values)
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
+
+      # WhatsApp Configuration
+      - WA_TOKEN=${WA_TOKEN}
+      - WA_PHONE_ID=${WA_PHONE_ID}
+
+      # SMS Configuration
+      - SMS_PROVIDER=${SMS_PROVIDER:-twilio}
+      - SMS_API_KEY=${SMS_API_KEY}
+      - SMS_FROM=${SMS_FROM}
+
+      # Database (optional for now)
+      - DB_URL=${DB_URL:-postgres://notify:notify@postgres:5432/notify?sslmode=disable}
+
+      # Templates
+      - TEMPLATES_DIR=./templates
+    volumes:
+      - ./templates:/app/templates
+    restart: unless-stopped
+    networks:
+      - notify-network
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: notify-postgres
+    environment:
+      - POSTGRES_USER=notify
+      - POSTGRES_PASSWORD=notify
+      - POSTGRES_DB=notify
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - notify-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  notify-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
