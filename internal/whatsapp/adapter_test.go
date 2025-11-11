@@ -232,3 +232,111 @@ func TestWhatsAppError_Parsing(t *testing.T) {
 		t.Errorf("Expected code 400, got %d", waErr.Error.Code)
 	}
 }
+
+// Vendor-Agnostic Tests
+func TestNewAdapter_VendorAgnostic(t *testing.T) {
+	tests := []struct {
+		name            string
+		config          *config.WhatsAppConfig
+		expectedBaseURL string
+		expectedVersion string
+	}{
+		{
+			name: "Facebook Cloud API (default)",
+			config: &config.WhatsAppConfig{
+				Token:   "token",
+				PhoneID: "phone-id",
+				// No BaseURL or APIVersion
+			},
+			expectedBaseURL: DefaultBaseURL,
+			expectedVersion: DefaultAPIVersion,
+		},
+		{
+			name: "360dialog",
+			config: &config.WhatsAppConfig{
+				Token:      "token",
+				PhoneID:    "phone-id",
+				BaseURL:    "https://waba.360dialog.io",
+				APIVersion: "v21.0",
+			},
+			expectedBaseURL: "https://waba.360dialog.io",
+			expectedVersion: "v21.0",
+		},
+		{
+			name: "Twilio WhatsApp",
+			config: &config.WhatsAppConfig{
+				Token:      "token",
+				PhoneID:    "phone-id",
+				BaseURL:    "https://api.twilio.com",
+				APIVersion: "v1",
+			},
+			expectedBaseURL: "https://api.twilio.com",
+			expectedVersion: "v1",
+		},
+		{
+			name: "On-premises API",
+			config: &config.WhatsAppConfig{
+				Token:      "token",
+				PhoneID:    "phone-id",
+				BaseURL:    "https://whatsapp.mycompany.com",
+				APIVersion: "v21.0",
+			},
+			expectedBaseURL: "https://whatsapp.mycompany.com",
+			expectedVersion: "v21.0",
+		},
+		{
+			name: "Empty BaseURL defaults to Facebook",
+			config: &config.WhatsAppConfig{
+				Token:      "token",
+				PhoneID:    "phone-id",
+				BaseURL:    "",
+				APIVersion: "v22.0",
+			},
+			expectedBaseURL: DefaultBaseURL,
+			expectedVersion: "v22.0",
+		},
+		{
+			name: "Empty APIVersion defaults to v21.0",
+			config: &config.WhatsAppConfig{
+				Token:      "token",
+				PhoneID:    "phone-id",
+				BaseURL:    "https://waba.360dialog.io",
+				APIVersion: "",
+			},
+			expectedBaseURL: "https://waba.360dialog.io",
+			expectedVersion: DefaultAPIVersion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := NewAdapter(tt.config)
+
+			if adapter.baseURL != tt.expectedBaseURL {
+				t.Errorf("Expected baseURL %s, got %s", tt.expectedBaseURL, adapter.baseURL)
+			}
+
+			if adapter.apiVersion != tt.expectedVersion {
+				t.Errorf("Expected apiVersion %s, got %s", tt.expectedVersion, adapter.apiVersion)
+			}
+
+			if adapter.config.Token != tt.config.Token {
+				t.Errorf("Expected token %s, got %s", tt.config.Token, adapter.config.Token)
+			}
+
+			if adapter.httpClient == nil {
+				t.Error("Expected httpClient to be initialized")
+			}
+		})
+	}
+}
+
+func TestDefaultConstants(t *testing.T) {
+	if DefaultAPIVersion != "v21.0" {
+		t.Errorf("Expected DefaultAPIVersion 'v21.0', got %s", DefaultAPIVersion)
+	}
+
+	if DefaultBaseURL != "https://graph.facebook.com" {
+		t.Errorf("Expected DefaultBaseURL 'https://graph.facebook.com', got %s", DefaultBaseURL)
+	}
+}
