@@ -8,11 +8,14 @@ import (
 	"html/template"
 	"net/smtp"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/huzaifabhutta/notify-core/internal/adapters"
 	"github.com/huzaifabhutta/notify-core/internal/config"
+	"github.com/huzaifabhutta/notify-core/internal/logger"
 )
 
 // validTemplateNameRegex ensures template names contain only safe characters
@@ -48,107 +51,73 @@ type SendRequest struct {
 }
 
 // Send sends an email notification
-func (a *Adapter) Send(ctx context.Context, req interface{}) error {
-	// Extract fields from request using duck typing
-	// This works with any struct that has these fields (like notify.SendRequest)
-	sendReq, err := extractSendRequest(req)
+// Returns a generated message ID and error
+func (a *Adapter) Send(ctx context.Context, req interface{}) (string, error) {
+	start := time.Now()
+	log := logger.FromContext(ctx)
+
+	// Generate message ID upfront
+	messageID := uuid.New().String()
+
+	// Extract fields using common adapter logic
+	baseReq, err := adapters.ExtractBaseRequest(req)
 	if err != nil {
-		return err
+		log.Error().Err(err).Msg("Failed to extract email request")
+		return "", fmt.Errorf("email adapter: %w", err)
 	}
 
+	maskedTo := logger.MaskEmail(baseReq.To)
+	log.Debug().
+		Str("channel", "email").
+		Str("to", maskedTo).
+		Str("template", baseReq.Template).
+		Str("message_id", messageID).
+		Msg("Processing email notification")
+
 	// Render template
-	body, err := a.renderTemplate(sendReq.Template, sendReq.Data)
+	body, err := a.renderTemplate(baseReq.Template, baseReq.Data)
 	if err != nil {
-		return fmt.Errorf("failed to render template: %w", err)
+		log.Error().
+			Err(err).
+			Str("template", baseReq.Template).
+			Str("message_id", messageID).
+			Msg("Failed to render email template")
+		return "", fmt.Errorf("failed to render template: %w", err)
 	}
 
 	// Determine sender
 	from := a.config.From
-	if sendReq.From != "" {
-		from = sendReq.From
+	if baseReq.From != "" {
+		from = baseReq.From
 	}
 
 	// Determine subject
-	subject := sendReq.Subject
+	subject := baseReq.Subject
 	if subject == "" {
 		subject = "Notification from " + from
 	}
 
 	// Send email
-	if err := a.sendEmail(from, sendReq.To, subject, body); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+	if err := a.sendEmail(from, baseReq.To, subject, body); err != nil {
+		log.Error().
+			Err(err).
+			Str("to", maskedTo).
+			Str("smtp_host", a.config.Host).
+			Str("message_id", messageID).
+			Dur("duration", time.Since(start)).
+			Msg("Failed to send email via SMTP")
+		return "", fmt.Errorf("failed to send email: %w", err)
 	}
 
-	return nil
-}
+	log.Info().
+		Str("channel", "email").
+		Str("to", maskedTo).
+		Str("template", baseReq.Template).
+		Str("message_id", messageID).
+		Dur("duration", time.Since(start)).
+		Msg("Email sent successfully")
 
-// extractSendRequest extracts SendRequest fields from any compatible struct using reflection
-// This allows the email adapter to work with notify.SendRequest without creating an import cycle
-func extractSendRequest(req interface{}) (SendRequest, error) {
-	// Try direct cast first (for testing with email.SendRequest)
-	if r, ok := req.(*SendRequest); ok {
-		return *r, nil
-	}
-	if r, ok := req.(SendRequest); ok {
-		return r, nil
-	}
-
-	// Use reflection to extract fields from any struct with matching fields
-	val := reflect.ValueOf(req)
-
-	// Handle pointer
-	if val.Kind() == reflect.Ptr {
-		if val.IsNil() {
-			return SendRequest{}, fmt.Errorf("nil request pointer")
-		}
-		val = val.Elem()
-	}
-
-	// Must be a struct
-	if val.Kind() != reflect.Struct {
-		return SendRequest{}, fmt.Errorf("invalid request type: expected struct, got %T", req)
-	}
-
-	// Extract fields
-	result := SendRequest{}
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		field := typ.Field(i)
-		fieldVal := val.Field(i)
-
-		switch field.Name {
-		case "To":
-			if field.Type.Kind() == reflect.String {
-				result.To = fieldVal.String()
-			}
-		case "Template":
-			if field.Type.Kind() == reflect.String {
-				result.Template = fieldVal.String()
-			}
-		case "Subject":
-			if field.Type.Kind() == reflect.String {
-				result.Subject = fieldVal.String()
-			}
-		case "From":
-			if field.Type.Kind() == reflect.String {
-				result.From = fieldVal.String()
-			}
-		case "Data":
-			if fieldVal.Type().Kind() == reflect.Map {
-				if data, ok := fieldVal.Interface().(map[string]interface{}); ok {
-					result.Data = data
-				}
-			}
-		}
-	}
-
-	// Validate required fields were found
-	if result.To == "" || result.Template == "" {
-		return SendRequest{}, fmt.Errorf("invalid request: missing required fields (To or Template)")
-	}
-
-	return result, nil
+	return messageID, nil
 }
 
 // renderTemplate renders an HTML template with the given data

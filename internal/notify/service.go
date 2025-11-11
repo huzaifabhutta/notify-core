@@ -3,10 +3,10 @@ package notify
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/huzaifabhutta/notify-core/internal/config"
 	"github.com/huzaifabhutta/notify-core/internal/email"
+	"github.com/huzaifabhutta/notify-core/internal/logger"
 	"github.com/huzaifabhutta/notify-core/internal/whatsapp"
 )
 
@@ -31,8 +31,9 @@ type SendRequest struct {
 
 // Adapter defines the interface for notification channels
 // Each adapter is responsible for handling its own request type
+// Send returns a message ID (if available) and an error
 type Adapter interface {
-	Send(ctx context.Context, req interface{}) error
+	Send(ctx context.Context, req interface{}) (messageID string, err error)
 	Name() string
 }
 
@@ -52,15 +53,15 @@ func NewService(cfg *config.Config) *Service {
 	// Register email adapter
 	emailAdapter := email.NewAdapter(&cfg.SMTP, &cfg.Templates)
 	s.RegisterAdapter(ChannelEmail, emailAdapter)
-	log.Printf("📧 Email channel registered")
+	logger.Logger.Info().Str("channel", "email").Msg("Channel registered")
 
 	// Register WhatsApp adapter (if configured)
 	if cfg.WhatsApp.Token != "" && cfg.WhatsApp.PhoneID != "" {
 		whatsappAdapter := whatsapp.NewAdapter(&cfg.WhatsApp)
 		s.RegisterAdapter(ChannelWhatsApp, whatsappAdapter)
-		log.Printf("💬 WhatsApp channel registered")
+		logger.Logger.Info().Str("channel", "whatsapp").Msg("Channel registered")
 	} else {
-		log.Printf("⚠️  WhatsApp channel not configured (missing WA_TOKEN or WA_PHONE_ID)")
+		logger.Logger.Warn().Msg("WhatsApp channel not configured (missing WA_TOKEN or WA_PHONE_ID)")
 	}
 
 	// TODO: Register SMS adapter
@@ -73,26 +74,37 @@ func (s *Service) RegisterAdapter(channel Channel, adapter Adapter) {
 	s.adapters[channel] = adapter
 }
 
+// SendResponse represents the response from sending a notification
+type SendResponse struct {
+	MessageID string `json:"message_id,omitempty"`
+	Channel   string `json:"channel"`
+}
+
 // Send sends a notification through the specified channel
-func (s *Service) Send(ctx context.Context, req *SendRequest) error {
+// Returns message ID and error
+func (s *Service) Send(ctx context.Context, req *SendRequest) (*SendResponse, error) {
 	// Validate request
 	if err := s.validateRequest(req); err != nil {
-		return fmt.Errorf("invalid request: %w", err)
+		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
 	// Get adapter for the channel
 	adapter, ok := s.adapters[req.Channel]
 	if !ok {
-		return fmt.Errorf("unsupported channel: %s", req.Channel)
+		return nil, fmt.Errorf("unsupported channel: %s", req.Channel)
 	}
 
 	// Send notification - pass SendRequest directly to adapter
 	// Adapter is responsible for type assertion and validation
-	if err := adapter.Send(ctx, req); err != nil {
-		return fmt.Errorf("failed to send via %s: %w", adapter.Name(), err)
+	messageID, err := adapter.Send(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send via %s: %w", adapter.Name(), err)
 	}
 
-	return nil
+	return &SendResponse{
+		MessageID: messageID,
+		Channel:   string(req.Channel),
+	}, nil
 }
 
 // validateRequest is now in validation.go with comprehensive checks

@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/huzaifabhutta/notify-core/internal/adapters"
 	"github.com/huzaifabhutta/notify-core/internal/config"
+	"github.com/huzaifabhutta/notify-core/internal/logger"
 )
 
 const (
@@ -120,35 +122,53 @@ type ErrorDetail struct {
 }
 
 // Send sends a WhatsApp notification
-func (a *Adapter) Send(ctx context.Context, req interface{}) error {
-	// Extract send request using reflection (similar to email adapter)
-	sendReq, err := extractSendRequest(req)
+// Returns the message ID from WhatsApp API and error
+func (a *Adapter) Send(ctx context.Context, req interface{}) (string, error) {
+	start := time.Now()
+	log := logger.FromContext(ctx)
+
+	// Extract fields using common adapter logic
+	baseReq, err := adapters.ExtractBaseRequest(req)
 	if err != nil {
-		return err
+		log.Error().Err(err).Msg("Failed to extract WhatsApp request")
+		return "", fmt.Errorf("whatsapp adapter: %w", err)
 	}
 
-	// Validate phone number format (should be E.164: +1234567890)
-	if sendReq.To == "" {
-		return fmt.Errorf("recipient phone number is required")
-	}
+	maskedTo := logger.MaskPhone(baseReq.To)
+	log.Debug().
+		Str("channel", "whatsapp").
+		Str("to", maskedTo).
+		Str("template", baseReq.Template).
+		Msg("Processing WhatsApp notification")
 
 	// Build WhatsApp API request
-	waReq := a.buildTemplateMessage(sendReq)
+	waReq := a.buildTemplateMessage(baseReq)
 
 	// Send via WhatsApp Cloud API
 	messageID, err := a.sendMessage(ctx, waReq)
 	if err != nil {
-		return fmt.Errorf("failed to send WhatsApp message: %w", err)
+		log.Error().
+			Err(err).
+			Str("to", maskedTo).
+			Str("template", baseReq.Template).
+			Dur("duration", time.Since(start)).
+			Msg("Failed to send WhatsApp message")
+		return "", fmt.Errorf("failed to send WhatsApp message: %w", err)
 	}
 
-	// Log success (will be enhanced in Day 13)
-	_ = messageID
+	log.Info().
+		Str("channel", "whatsapp").
+		Str("to", maskedTo).
+		Str("template", baseReq.Template).
+		Str("message_id", messageID).
+		Dur("duration", time.Since(start)).
+		Msg("WhatsApp message sent successfully")
 
-	return nil
+	return messageID, nil
 }
 
 // buildTemplateMessage builds a template message request
-func (a *Adapter) buildTemplateMessage(req SendRequest) *WhatsAppMessageRequest {
+func (a *Adapter) buildTemplateMessage(req adapters.BaseRequest) *WhatsAppMessageRequest {
 	// Build template components from data
 	var components []Component
 	if len(req.Data) > 0 {
@@ -185,6 +205,8 @@ func (a *Adapter) buildTemplateMessage(req SendRequest) *WhatsAppMessageRequest 
 
 // sendMessage sends the message via WhatsApp Cloud API
 func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) (string, error) {
+	log := logger.FromContext(ctx)
+
 	// Build API URL
 	url := fmt.Sprintf("%s/%s/%s/messages", BaseURL, APIVersion, a.config.PhoneID)
 
@@ -193,6 +215,11 @@ func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) 
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	log.Debug().
+		Str("api_url", url).
+		Str("api_version", APIVersion).
+		Msg("Sending request to WhatsApp API")
 
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
@@ -207,6 +234,7 @@ func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) 
 	// Send request
 	resp, err := a.httpClient.Do(httpReq)
 	if err != nil {
+		log.Error().Err(err).Msg("HTTP request to WhatsApp API failed")
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -219,6 +247,11 @@ func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) 
 
 	// Check for errors
 	if resp.StatusCode != http.StatusOK {
+		log.Warn().
+			Int("status_code", resp.StatusCode).
+			Str("response", string(respBody)).
+			Msg("WhatsApp API returned non-200 status")
+
 		var waErr WhatsAppError
 		if err := json.Unmarshal(respBody, &waErr); err != nil {
 			return "", fmt.Errorf("WhatsApp API error (status %d): %s", resp.StatusCode, string(respBody))
@@ -236,44 +269,9 @@ func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) 
 		return "", fmt.Errorf("no message ID in response")
 	}
 
+	log.Debug().
+		Str("message_id", waResp.Messages[0].ID).
+		Msg("WhatsApp API request successful")
+
 	return waResp.Messages[0].ID, nil
-}
-
-// extractSendRequest extracts fields from the notify.SendRequest
-func extractSendRequest(req interface{}) (SendRequest, error) {
-	// Try direct cast first
-	if r, ok := req.(*SendRequest); ok {
-		return *r, nil
-	}
-	if r, ok := req.(SendRequest); ok {
-		return r, nil
-	}
-
-	// Extract from notify.SendRequest using type assertion
-	type RequestLike interface {
-		To, Template string
-		Data         map[string]interface{}
-	}
-
-	if r, ok := req.(RequestLike); ok {
-		return SendRequest{
-			To:       r.To,
-			Template: r.Template,
-			Data:     r.Data,
-		}, nil
-	}
-
-	// Try pointer version
-	if ptr, ok := req.(interface {
-		To, Template string
-		Data         map[string]interface{}
-	}); ok {
-		return SendRequest{
-			To:       ptr.To,
-			Template: ptr.Template,
-			Data:     ptr.Data,
-		}, nil
-	}
-
-	return SendRequest{}, fmt.Errorf("invalid request type for WhatsApp adapter: got %T", req)
 }
