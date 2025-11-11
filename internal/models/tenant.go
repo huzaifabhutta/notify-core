@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -94,4 +95,10 @@ func (t *Tenant) HasWhatsAppConfig() bool {
 // HasSMSConfig checks if tenant has SMS configuration
 func (t *Tenant) HasSMSConfig() bool {
 	return t.SMSProvider != "" && t.SMSAPIKey != ""
+}
+
+// String returns a safe string representation that doesn't expose sensitive data
+func (t *Tenant) String() string {
+	return fmt.Sprintf("Tenant{ID:%d, Name:%s, Active:%t, HasEmail:%t, HasWhatsApp:%t, HasSMS:%t}",
+		t.ID, t.Name, t.Active, t.HasEmailConfig(), t.HasWhatsAppConfig(), t.HasSMSConfig())
 }

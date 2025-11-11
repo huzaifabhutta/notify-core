@@ -33,6 +33,9 @@ func (s *TenantService) CreateTenant(ctx context.Context, req *models.CreateTena
 	if req.Name == "" {
 		return nil, fmt.Errorf("tenant name is required")
 	}
+	if len(req.Name) > 255 {
+		return nil, fmt.Errorf("tenant name too long (max 255 characters)")
+	}
 
 	// Create tenant
 	tenant, err := s.repo.Create(ctx, req)

@@ -184,5 +184,25 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid PORT: must be between 1-65535, got %s", c.Server.Port)
 	}
 
+	// Database validation (Week 3+)
+	if c.Database.Host == "" {
+		return fmt.Errorf("DB_HOST is required")
+	}
+	if c.Database.Port < 1 || c.Database.Port > 65535 {
+		return fmt.Errorf("invalid DB_PORT: must be between 1-65535, got %d", c.Database.Port)
+	}
+	if c.Database.User == "" {
+		return fmt.Errorf("DB_USER is required")
+	}
+	if c.Database.DBName == "" {
+		return fmt.Errorf("DB_NAME is required")
+	}
+	if c.Database.MaxConns < 1 {
+		return fmt.Errorf("DB_MAX_CONNS must be at least 1, got %d", c.Database.MaxConns)
+	}
+	if c.Database.MaxIdle < 0 || c.Database.MaxIdle > c.Database.MaxConns {
+		return fmt.Errorf("DB_MAX_IDLE must be between 0 and DB_MAX_CONNS (%d), got %d", c.Database.MaxConns, c.Database.MaxIdle)
+	}
+
 	return nil
 }

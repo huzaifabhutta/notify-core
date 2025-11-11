@@ -261,6 +261,7 @@ func GetMigrations() []Migration {
 				CREATE INDEX idx_notifications_channel ON notifications(channel);
 				CREATE INDEX idx_notifications_created_at ON notifications(created_at);
 				CREATE INDEX idx_notifications_sent_at ON notifications(sent_at);
+				CREATE INDEX idx_notifications_tenant_created ON notifications(tenant_id, created_at DESC);
 			`,
 			Down: `DROP TABLE IF EXISTS notifications CASCADE;`,
 		},

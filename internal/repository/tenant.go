@@ -1,3 +1,10 @@
+// Package repository provides data access layer for the notify-core database.
+//
+// SECURITY: All queries MUST use parameterized statements ($1, $2, etc.) to prevent SQL injection.
+// NEVER concatenate user input into SQL strings.
+//
+// ✅ SAFE:   query := "SELECT * FROM users WHERE id = $1"
+// ❌ UNSAFE: query := fmt.Sprintf("SELECT * FROM users WHERE id = %s", userInput)
 package repository
 
 import (
