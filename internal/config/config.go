@@ -51,7 +51,14 @@ type SMSConfig struct {
 
 // DatabaseConfig holds database configuration
 type DatabaseConfig struct {
-	URL string
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string
+	MaxConns int
+	MaxIdle  int
 }
 
 // TemplatesConfig holds template system configuration
@@ -67,6 +74,21 @@ func Load() (*Config, error) {
 	smtpPort, err := strconv.Atoi(getEnv("SMTP_PORT", "587"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid SMTP_PORT: %w", err)
+	}
+
+	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid DB_PORT: %w", err)
+	}
+
+	dbMaxConns, err := strconv.Atoi(getEnv("DB_MAX_CONNS", "25"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid DB_MAX_CONNS: %w", err)
+	}
+
+	dbMaxIdle, err := strconv.Atoi(getEnv("DB_MAX_IDLE", "5"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid DB_MAX_IDLE: %w", err)
 	}
 
 	cfg := &Config{
@@ -93,7 +115,14 @@ func Load() (*Config, error) {
 			From:     getEnv("SMS_FROM", ""),
 		},
 		Database: DatabaseConfig{
-			URL: getEnv("DB_URL", ""),
+			Host:     getEnv("DB_HOST", "localhost"),
+			Port:     dbPort,
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASSWORD", ""),
+			DBName:   getEnv("DB_NAME", "notify"),
+			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
+			MaxConns: dbMaxConns,
+			MaxIdle:  dbMaxIdle,
 		},
 		Templates: TemplatesConfig{
 			Dir: getEnv("TEMPLATES_DIR", "./templates"),
