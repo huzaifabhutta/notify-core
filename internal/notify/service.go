@@ -3,9 +3,11 @@ package notify
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/huzaifabhutta/notify-core/internal/config"
 	"github.com/huzaifabhutta/notify-core/internal/email"
+	"github.com/huzaifabhutta/notify-core/internal/whatsapp"
 )
 
 // Channel represents a notification channel type
@@ -50,8 +52,17 @@ func NewService(cfg *config.Config) *Service {
 	// Register email adapter
 	emailAdapter := email.NewAdapter(&cfg.SMTP, &cfg.Templates)
 	s.RegisterAdapter(ChannelEmail, emailAdapter)
+	log.Printf("📧 Email channel registered")
 
-	// TODO: Register WhatsApp adapter
+	// Register WhatsApp adapter (if configured)
+	if cfg.WhatsApp.Token != "" && cfg.WhatsApp.PhoneID != "" {
+		whatsappAdapter := whatsapp.NewAdapter(&cfg.WhatsApp)
+		s.RegisterAdapter(ChannelWhatsApp, whatsappAdapter)
+		log.Printf("💬 WhatsApp channel registered")
+	} else {
+		log.Printf("⚠️  WhatsApp channel not configured (missing WA_TOKEN or WA_PHONE_ID)")
+	}
+
 	// TODO: Register SMS adapter
 
 	return s
