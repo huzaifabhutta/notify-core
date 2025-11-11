@@ -265,5 +265,31 @@ func GetMigrations() []Migration {
 			`,
 			Down: `DROP TABLE IF EXISTS notifications CASCADE;`,
 		},
+		{
+			Version: 4,
+			Name:    "add_whatsapp_vendor_agnostic_fields",
+			Up: `
+				-- Add vendor-agnostic WhatsApp configuration fields
+				-- Allows tenants to use any WhatsApp Business API provider (Facebook, 360dialog, Twilio, etc.)
+				ALTER TABLE tenants
+					ADD COLUMN wa_base_url VARCHAR(255),
+					ADD COLUMN wa_api_version VARCHAR(50);
+
+				-- Set default values for existing rows (Facebook Cloud API)
+				UPDATE tenants
+				SET wa_base_url = 'https://graph.facebook.com',
+					wa_api_version = 'v21.0'
+				WHERE wa_token IS NOT NULL AND wa_token != '';
+
+				-- Add comment for documentation
+				COMMENT ON COLUMN tenants.wa_base_url IS 'WhatsApp API base URL (e.g., https://graph.facebook.com, https://waba.360dialog.io)';
+				COMMENT ON COLUMN tenants.wa_api_version IS 'WhatsApp API version (e.g., v21.0)';
+			`,
+			Down: `
+				ALTER TABLE tenants
+					DROP COLUMN IF EXISTS wa_base_url,
+					DROP COLUMN IF EXISTS wa_api_version;
+			`,
+		},
 	}
 }

@@ -44,6 +44,8 @@ type SMTPConfig struct {
 type WhatsAppConfig struct {
 	Token       string
 	PhoneID     string
+	BaseURL     string // API base URL (e.g., "https://graph.facebook.com", "https://waba.360dialog.io")
+	APIVersion  string // API version (e.g., "v21.0")
 	WebhookURL  string
 	VerifyToken string
 }
@@ -112,6 +114,8 @@ func Load() (*Config, error) {
 		WhatsApp: WhatsAppConfig{
 			Token:       getEnv("WA_TOKEN", ""),
 			PhoneID:     getEnv("WA_PHONE_ID", ""),
+			BaseURL:     getEnv("WA_BASE_URL", "https://graph.facebook.com"), // Default to Facebook Cloud API
+			APIVersion:  getEnv("WA_API_VERSION", "v21.0"),                   // Default to v21.0
 			WebhookURL:  getEnv("WA_WEBHOOK_URL", ""),
 			VerifyToken: getEnv("WA_VERIFY_TOKEN", ""),
 		},

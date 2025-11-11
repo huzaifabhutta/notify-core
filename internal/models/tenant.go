@@ -21,8 +21,10 @@ type Tenant struct {
 	SMTPFrom     string `json:"smtp_from,omitempty"`
 
 	// WhatsApp configuration
-	WAToken   string `json:"wa_token,omitempty"`
-	WAPhoneID string `json:"wa_phone_id,omitempty"`
+	WAToken     string `json:"wa_token,omitempty"`
+	WAPhoneID   string `json:"wa_phone_id,omitempty"`
+	WABaseURL   string `json:"wa_base_url,omitempty"`   // Optional: WhatsApp API base URL
+	WAAPIVersion string `json:"wa_api_version,omitempty"` // Optional: WhatsApp API version
 
 	// SMS configuration
 	SMSProvider  string `json:"sms_provider,omitempty"`
@@ -49,8 +51,10 @@ type CreateTenantRequest struct {
 	SMTPFrom     string `json:"smtp_from,omitempty"`
 
 	// WhatsApp configuration (optional)
-	WAToken   string `json:"wa_token,omitempty"`
-	WAPhoneID string `json:"wa_phone_id,omitempty"`
+	WAToken      string `json:"wa_token,omitempty"`
+	WAPhoneID    string `json:"wa_phone_id,omitempty"`
+	WABaseURL    string `json:"wa_base_url,omitempty"`    // Optional: Custom API endpoint (defaults to Facebook)
+	WAAPIVersion string `json:"wa_api_version,omitempty"` // Optional: API version (defaults to v21.0)
 
 	// SMS configuration (optional)
 	SMSProvider  string `json:"sms_provider,omitempty"`
@@ -70,8 +74,10 @@ type UpdateTenantRequest struct {
 	SMTPFrom     *string `json:"smtp_from,omitempty"`
 
 	// WhatsApp configuration
-	WAToken   *string `json:"wa_token,omitempty"`
-	WAPhoneID *string `json:"wa_phone_id,omitempty"`
+	WAToken      *string `json:"wa_token,omitempty"`
+	WAPhoneID    *string `json:"wa_phone_id,omitempty"`
+	WABaseURL    *string `json:"wa_base_url,omitempty"`    // Optional: Custom API endpoint
+	WAAPIVersion *string `json:"wa_api_version,omitempty"` // Optional: API version
 
 	// SMS configuration
 	SMSProvider  *string `json:"sms_provider,omitempty"`

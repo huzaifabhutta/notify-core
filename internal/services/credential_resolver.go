@@ -35,9 +35,11 @@ type SMTPCredentials struct {
 // WhatsAppCredentials holds WhatsApp API configuration
 // Vendor-agnostic: works with any WhatsApp Business API provider
 type WhatsAppCredentials struct {
-	Token    string
-	PhoneID  string
-	Source   string // "tenant" or "global"
+	Token      string
+	PhoneID    string
+	BaseURL    string // API base URL (e.g., Facebook, 360dialog, Twilio)
+	APIVersion string // API version
+	Source     string // "tenant" or "global"
 }
 
 // SMSCredentials holds SMS API configuration
@@ -81,13 +83,16 @@ func (r *CredentialResolver) ResolveEmailCredentials(tenant *models.Tenant) (*SM
 
 // ResolveWhatsAppCredentials returns WhatsApp credentials for a tenant
 // Priority: 1) Tenant-specific, 2) Global fallback
+// Vendor-agnostic: returns base URL and API version for any provider
 func (r *CredentialResolver) ResolveWhatsAppCredentials(tenant *models.Tenant) (*WhatsAppCredentials, error) {
 	// Try tenant-specific credentials first
 	if tenant != nil && tenant.HasWhatsAppConfig() {
 		return &WhatsAppCredentials{
-			Token:   tenant.WAToken,
-			PhoneID: tenant.WAPhoneID,
-			Source:  "tenant",
+			Token:      tenant.WAToken,
+			PhoneID:    tenant.WAPhoneID,
+			BaseURL:    tenant.WABaseURL,    // May be empty (adapter will use default)
+			APIVersion: tenant.WAAPIVersion, // May be empty (adapter will use default)
+			Source:     "tenant",
 		}, nil
 	}
 
@@ -97,9 +102,11 @@ func (r *CredentialResolver) ResolveWhatsAppCredentials(tenant *models.Tenant) (
 	}
 
 	return &WhatsAppCredentials{
-		Token:   r.globalConfig.WhatsApp.Token,
-		PhoneID: r.globalConfig.WhatsApp.PhoneID,
-		Source:  "global",
+		Token:      r.globalConfig.WhatsApp.Token,
+		PhoneID:    r.globalConfig.WhatsApp.PhoneID,
+		BaseURL:    r.globalConfig.WhatsApp.BaseURL,    // From global config
+		APIVersion: r.globalConfig.WhatsApp.APIVersion, // From global config
+		Source:     "global",
 	}, nil
 }
 

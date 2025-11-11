@@ -6,8 +6,8 @@ import (
 
 	"github.com/huzaifabhutta/notify-core/internal/config"
 	"github.com/huzaifabhutta/notify-core/internal/email"
-	"github.com/huzaifabhutta/notify-core/internal/middleware"
 	"github.com/huzaifabhutta/notify-core/internal/models"
+	"github.com/huzaifabhutta/notify-core/internal/tenantctx"
 	"github.com/huzaifabhutta/notify-core/internal/whatsapp"
 	"github.com/rs/zerolog"
 )
@@ -68,7 +68,7 @@ func NewNotifyService(cfg *config.Config, credentialResolver *CredentialResolver
 // Send sends a notification through the specified channel using tenant-specific or global credentials
 func (s *NotifyService) Send(ctx context.Context, req *SendRequest) (*SendResponse, error) {
 	// Extract tenant from context
-	tenant, ok := middleware.GetTenantFromContext(ctx)
+	tenant, ok := tenantctx.GetTenant(ctx)
 	if !ok {
 		return nil, fmt.Errorf("tenant not found in context - ensure authentication middleware is applied")
 	}
@@ -192,12 +192,14 @@ func (s *NotifyService) sendWhatsApp(ctx context.Context, tenant *models.Tenant,
 
 	// Create WhatsApp config for this specific request
 	waConfig := &config.WhatsAppConfig{
-		Token:   creds.Token,
-		PhoneID: creds.PhoneID,
+		Token:      creds.Token,
+		PhoneID:    creds.PhoneID,
+		BaseURL:    creds.BaseURL,    // Vendor-agnostic: can be any WhatsApp API endpoint
+		APIVersion: creds.APIVersion, // Configurable API version
 	}
 
 	// Create WhatsApp adapter with resolved credentials
-	// Vendor-agnostic - works with any WhatsApp Business API provider
+	// Vendor-agnostic - works with any WhatsApp Business API provider (Facebook, 360dialog, Twilio, etc.)
 	whatsappAdapter := whatsapp.NewAdapter(waConfig)
 
 	// Convert SendRequest to WhatsApp-specific request

@@ -15,22 +15,40 @@ import (
 )
 
 const (
-	// WhatsApp Cloud API version
-	APIVersion = "v21.0"
-	// Base URL for WhatsApp Cloud API
-	BaseURL = "https://graph.facebook.com"
+	// Default WhatsApp Cloud API version (used if not configured)
+	DefaultAPIVersion = "v21.0"
+	// Default Base URL for WhatsApp Cloud API (used if not configured)
+	DefaultBaseURL = "https://graph.facebook.com"
 )
 
-// Adapter handles WhatsApp notifications via Meta Cloud API
+// Adapter handles WhatsApp notifications via any WhatsApp Business API provider
+// Vendor-agnostic: works with Facebook Cloud API, 360dialog, Twilio, on-premises, etc.
 type Adapter struct {
 	config     *config.WhatsAppConfig
 	httpClient *http.Client
+	baseURL    string // Configurable base URL (defaults to Facebook Cloud API)
+	apiVersion string // Configurable API version (defaults to v21.0)
 }
 
 // NewAdapter creates a new WhatsApp adapter
+// Vendor-agnostic: uses configured BaseURL or defaults to Facebook Cloud API
 func NewAdapter(cfg *config.WhatsAppConfig) *Adapter {
+	// Use configured BaseURL or fallback to Facebook Cloud API
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
+
+	// Use configured API version or fallback to default
+	apiVersion := cfg.APIVersion
+	if apiVersion == "" {
+		apiVersion = DefaultAPIVersion
+	}
+
 	return &Adapter{
-		config: cfg,
+		config:     cfg,
+		baseURL:    baseURL,
+		apiVersion: apiVersion,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -203,12 +221,13 @@ func (a *Adapter) buildTemplateMessage(req adapters.BaseRequest) *WhatsAppMessag
 	}
 }
 
-// sendMessage sends the message via WhatsApp Cloud API
+// sendMessage sends the message via WhatsApp Business API
+// Vendor-agnostic: uses configured base URL and API version
 func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) (string, error) {
 	log := logger.FromContext(ctx)
 
-	// Build API URL
-	url := fmt.Sprintf("%s/%s/%s/messages", BaseURL, APIVersion, a.config.PhoneID)
+	// Build API URL using configured base URL and version
+	url := fmt.Sprintf("%s/%s/%s/messages", a.baseURL, a.apiVersion, a.config.PhoneID)
 
 	// Marshal request body
 	body, err := json.Marshal(msg)
@@ -218,7 +237,8 @@ func (a *Adapter) sendMessage(ctx context.Context, msg *WhatsAppMessageRequest) 
 
 	log.Debug().
 		Str("api_url", url).
-		Str("api_version", APIVersion).
+		Str("base_url", a.baseURL).
+		Str("api_version", a.apiVersion).
 		Msg("Sending request to WhatsApp API")
 
 	// Create HTTP request

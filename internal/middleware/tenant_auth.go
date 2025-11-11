@@ -1,23 +1,10 @@
 package middleware
 
 import (
-	"context"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/huzaifabhutta/notify-core/internal/models"
 	"github.com/huzaifabhutta/notify-core/internal/services"
+	"github.com/huzaifabhutta/notify-core/internal/tenantctx"
 	"github.com/rs/zerolog"
-)
-
-// contextKey is a custom type for context keys to avoid collisions
-type contextKey string
-
-const (
-	// TenantContextKey is the key for storing tenant in context
-	TenantContextKey contextKey = "tenant"
-
-	// RequestIDContextKey is the key for storing request ID in context
-	RequestIDContextKey contextKey = "request_id"
 )
 
 // TenantAuth is middleware that validates API key and injects tenant into context
@@ -89,7 +76,7 @@ func (m *TenantAuth) Authenticate() fiber.Handler {
 			Msg("Tenant authenticated")
 
 		// Inject tenant into context
-		ctxWithTenant := context.WithValue(ctx, TenantContextKey, tenant)
+		ctxWithTenant := tenantctx.SetTenant(ctx, tenant)
 		c.SetUserContext(ctxWithTenant)
 
 		// Add tenant info to response headers (for debugging)
@@ -134,7 +121,7 @@ func (m *TenantAuth) Optional() fiber.Handler {
 		}
 
 		// Inject tenant into context
-		ctxWithTenant := context.WithValue(ctx, TenantContextKey, tenant)
+		ctxWithTenant := tenantctx.SetTenant(ctx, tenant)
 		c.SetUserContext(ctxWithTenant)
 
 		m.logger.Debug().
@@ -144,25 +131,4 @@ func (m *TenantAuth) Optional() fiber.Handler {
 
 		return c.Next()
 	}
-}
-
-// GetTenantFromContext extracts tenant from context
-func GetTenantFromContext(ctx context.Context) (*models.Tenant, bool) {
-	tenant, ok := ctx.Value(TenantContextKey).(*models.Tenant)
-	return tenant, ok
-}
-
-// GetTenantFromFiberContext extracts tenant from Fiber context
-func GetTenantFromFiberContext(c *fiber.Ctx) (*models.Tenant, bool) {
-	return GetTenantFromContext(c.UserContext())
-}
-
-// MustGetTenant extracts tenant from context or panics
-// Use only in handlers protected by Authenticate() middleware
-func MustGetTenant(ctx context.Context) *models.Tenant {
-	tenant, ok := GetTenantFromContext(ctx)
-	if !ok {
-		panic("tenant not found in context - ensure Authenticate() middleware is applied")
-	}
-	return tenant
 }

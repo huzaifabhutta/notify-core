@@ -43,11 +43,11 @@ func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantR
 		INSERT INTO tenants (
 			name, api_key,
 			smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
-			wa_token, wa_phone_id,
+			wa_token, wa_phone_id, wa_base_url, wa_api_version,
 			sms_provider, sms_api_key, sms_sender_id,
 			active, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -94,7 +94,9 @@ func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantR
 			SMTPFrom:     req.SMTPFrom,
 
 			WAToken:   encryptedWAToken, // Store encrypted
-			WAPhoneID: req.WAPhoneID,
+			WAPhoneID:    req.WAPhoneID,
+			WABaseURL:    req.WABaseURL,
+			WAAPIVersion: req.WAAPIVersion,
 
 			SMSProvider: req.SMSProvider,
 			SMSAPIKey:   encryptedSMSAPIKey, // Store encrypted
@@ -106,7 +108,7 @@ func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantR
 		err = r.db.QueryRowContext(ctx, query,
 			tenant.Name, tenant.APIKey,
 			tenant.SMTPHost, tenant.SMTPPort, tenant.SMTPUser, tenant.SMTPPassword, tenant.SMTPFrom,
-			tenant.WAToken, tenant.WAPhoneID,
+			tenant.WAToken, tenant.WAPhoneID, tenant.WABaseURL, tenant.WAAPIVersion,
 			tenant.SMSProvider, tenant.SMSAPIKey, tenant.SMSSenderID,
 			tenant.Active, now, now,
 		).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt)
@@ -137,7 +139,7 @@ func (r *TenantRepository) GetByID(ctx context.Context, id int) (*models.Tenant,
 		SELECT
 			id, name, api_key,
 			smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
-			wa_token, wa_phone_id,
+			wa_token, wa_phone_id, wa_base_url, wa_api_version,
 			sms_provider, sms_api_key, sms_sender_id,
 			active, created_at, updated_at
 		FROM tenants
@@ -148,7 +150,7 @@ func (r *TenantRepository) GetByID(ctx context.Context, id int) (*models.Tenant,
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&tenant.ID, &tenant.Name, &tenant.APIKey,
 		&tenant.SMTPHost, &tenant.SMTPPort, &tenant.SMTPUser, &tenant.SMTPPassword, &tenant.SMTPFrom,
-		&tenant.WAToken, &tenant.WAPhoneID,
+		&tenant.WAToken, &tenant.WAPhoneID, &tenant.WABaseURL, &tenant.WAAPIVersion,
 		&tenant.SMSProvider, &tenant.SMSAPIKey, &tenant.SMSSenderID,
 		&tenant.Active, &tenant.CreatedAt, &tenant.UpdatedAt,
 	)
@@ -176,7 +178,7 @@ func (r *TenantRepository) GetByAPIKey(ctx context.Context, plainAPIKey string) 
 		SELECT
 			id, name, api_key,
 			smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
-			wa_token, wa_phone_id,
+			wa_token, wa_phone_id, wa_base_url, wa_api_version,
 			sms_provider, sms_api_key, sms_sender_id,
 			active, created_at, updated_at
 		FROM tenants
@@ -195,7 +197,7 @@ func (r *TenantRepository) GetByAPIKey(ctx context.Context, plainAPIKey string) 
 		err := rows.Scan(
 			&tenant.ID, &tenant.Name, &tenant.APIKey,
 			&tenant.SMTPHost, &tenant.SMTPPort, &tenant.SMTPUser, &tenant.SMTPPassword, &tenant.SMTPFrom,
-			&tenant.WAToken, &tenant.WAPhoneID,
+			&tenant.WAToken, &tenant.WAPhoneID, &tenant.WABaseURL, &tenant.WAAPIVersion,
 			&tenant.SMSProvider, &tenant.SMSAPIKey, &tenant.SMSSenderID,
 			&tenant.Active, &tenant.CreatedAt, &tenant.UpdatedAt,
 		)
@@ -330,6 +332,18 @@ func (r *TenantRepository) Update(ctx context.Context, id int, req *models.Updat
 	if req.WAPhoneID != nil {
 		query += fmt.Sprintf(", wa_phone_id = $%d", argCount)
 		args = append(args, *req.WAPhoneID)
+		argCount++
+	}
+
+	if req.WABaseURL != nil {
+		query += fmt.Sprintf(", wa_base_url = $%d", argCount)
+		args = append(args, *req.WABaseURL)
+		argCount++
+	}
+
+	if req.WAAPIVersion != nil {
+		query += fmt.Sprintf(", wa_api_version = $%d", argCount)
+		args = append(args, *req.WAAPIVersion)
 		argCount++
 	}
 

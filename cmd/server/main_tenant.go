@@ -17,6 +17,7 @@ import (
 	"github.com/huzaifabhutta/notify-core/internal/middleware"
 	"github.com/huzaifabhutta/notify-core/internal/repository"
 	"github.com/huzaifabhutta/notify-core/internal/services"
+	"github.com/huzaifabhutta/notify-core/internal/tenantctx"
 )
 
 // initializeDatabase initializes the database connection and runs migrations
@@ -85,7 +86,7 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 
 	// Get current tenant info
 	tenants.Get("/me", func(c *fiber.Ctx) error {
-		tenant, ok := middleware.GetTenantFromFiberContext(c)
+		tenant, ok := tenantctx.GetTenantFromFiberContext(c)
 		if !ok {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"status":  "error",
@@ -110,7 +111,7 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 
 	// Update current tenant
 	tenants.Put("/me", func(c *fiber.Ctx) error {
-		tenant, _ := middleware.GetTenantFromFiberContext(c)
+		tenant, _ := tenantctx.GetTenantFromFiberContext(c)
 
 		var updateReq services.UpdateTenantRequest
 		if err := c.BodyParser(&updateReq); err != nil {
@@ -145,7 +146,7 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 			Max:        50,              // 50 requests per minute per tenant
 			Expiration: 1 * time.Minute,
 			KeyGenerator: func(c *fiber.Ctx) string {
-				tenant, ok := middleware.GetTenantFromFiberContext(c)
+				tenant, ok := tenantctx.GetTenantFromFiberContext(c)
 				if ok {
 					return string(rune(tenant.ID))
 				}
