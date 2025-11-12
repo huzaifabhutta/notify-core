@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -20,13 +21,22 @@ const (
 	StatusUnknown   Status = "unknown"
 )
 
+// DurationMillis is a time.Duration that marshals to milliseconds as a float64
+type DurationMillis time.Duration
+
+// MarshalJSON converts duration to milliseconds for JSON output
+func (d DurationMillis) MarshalJSON() ([]byte, error) {
+	ms := float64(time.Duration(d)) / float64(time.Millisecond)
+	return json.Marshal(ms)
+}
+
 // ComponentHealth represents the health of a single component
 type ComponentHealth struct {
 	Name      string                 `json:"name"`
 	Type      string                 `json:"type"`
 	Status    Status                 `json:"status"`
 	Message   string                 `json:"message,omitempty"`
-	Latency   time.Duration          `json:"latency_ms"`
+	Latency   DurationMillis         `json:"latency_ms"`
 	Timestamp time.Time              `json:"timestamp"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -56,7 +66,7 @@ type Config struct {
 func NewChecker(cfg *Config, logger zerolog.Logger) *Checker {
 	if cfg == nil {
 		cfg = &Config{
-			Timeout:        5 * time.Second,
+			Timeout:        3 * time.Second,
 			EnableAdapters: true,
 			EnableDatabase: false,
 		}
@@ -126,6 +136,29 @@ func (c *Checker) checkAdapters(ctx context.Context, report *HealthReport, wg *s
 		go func(name string) {
 			defer wg.Done()
 
+			// Recover from panics in adapter health checks
+			defer func() {
+				if r := recover(); r != nil {
+					c.logger.Error().
+						Str("adapter", name).
+						Interface("panic", r).
+						Msg("Panic during adapter health check")
+
+					// Create unhealthy status for panicked adapter
+					mu.Lock()
+					report.Components[fmt.Sprintf("adapter:%s", name)] = ComponentHealth{
+						Name:      name,
+						Type:      "adapter",
+						Status:    StatusUnhealthy,
+						Message:   fmt.Sprintf("health check panicked: %v", r),
+						Timestamp: time.Now(),
+						Latency:   DurationMillis(0),
+					}
+					report.Summary["unhealthy"]++
+					mu.Unlock()
+				}
+			}()
+
 			health := c.checkAdapter(ctx, name)
 
 			mu.Lock()
@@ -153,7 +186,7 @@ func (c *Checker) checkAdapter(ctx context.Context, adapterName string) Componen
 	if meta == nil {
 		health.Status = StatusUnhealthy
 		health.Message = "adapter not found in registry"
-		health.Latency = time.Since(startTime)
+		health.Latency = DurationMillis(time.Since(startTime))
 		return health
 	}
 
@@ -167,12 +200,12 @@ func (c *Checker) checkAdapter(ctx context.Context, adapterName string) Componen
 	// Since adapter is registered, mark as healthy
 	health.Status = StatusHealthy
 	health.Message = "adapter registered and available"
-	health.Latency = time.Since(startTime)
+	health.Latency = DurationMillis(time.Since(startTime))
 
 	c.logger.Debug().
 		Str("adapter", adapterName).
 		Str("status", string(health.Status)).
-		Dur("latency_ms", health.Latency).
+		Dur("latency_ms", time.Duration(health.Latency)).
 		Msg("Adapter health check completed")
 
 	return health
@@ -229,7 +262,7 @@ func (c *Checker) CheckAdapter(ctx context.Context, adapter adapters.Adapter) Co
 		health.Message = "adapter available (ping not supported)"
 	}
 
-	health.Latency = time.Since(startTime)
+	health.Latency = DurationMillis(time.Since(startTime))
 
 	return health
 }

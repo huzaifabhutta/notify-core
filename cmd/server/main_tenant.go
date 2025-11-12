@@ -72,7 +72,7 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 
 	// Initialize health checker
 	healthChecker := health.NewChecker(&health.Config{
-		Timeout:        5 * time.Second,
+		Timeout:        3 * time.Second,
 		EnableAdapters: true,
 		EnableDatabase: false, // TODO: Add database health check in future
 	}, appLogger.Logger)
