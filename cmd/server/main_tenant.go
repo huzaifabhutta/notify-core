@@ -71,21 +71,10 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 
 	credentialResolver := services.NewCredentialResolver(cfg)
 
-	// Feature flag: Enable V3 service with channel registry
-	// Set ENABLE_V3=true in environment to use the new channel registry architecture
-	enableV3 := os.Getenv("ENABLE_V3") == "true"
-
-	// Create V2 service (fallback)
-	notifyServiceV2 := services.NewNotifyServiceV2(cfg, credentialResolver, appLogger.Logger)
-
-	// Create V3 service if enabled
-	var notifyServiceV3 *services.NotifyServiceV3
-	if enableV3 {
-		notifyServiceV3 = services.NewNotifyServiceV3(cfg, credentialResolver, appLogger.Logger)
-		appLogger.Logger.Info().Msg("🚀 V3 Channel Registry enabled - using pluggable channel architecture")
-	} else {
-		appLogger.Logger.Info().Msg("Using V2 Service (set ENABLE_V3=true to enable channel registry)")
-	}
+	// Use NotifyServiceV3 with channel registry
+	// This provides pluggable channel architecture for easy extensibility
+	notifyService := services.NewNotifyServiceV3(cfg, credentialResolver, appLogger.Logger)
+	appLogger.Logger.Info().Msg("🚀 Channel Registry enabled - using pluggable channel architecture")
 
 	// Initialize health checker
 	healthChecker := health.NewChecker(&health.Config{
@@ -211,15 +200,8 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 				})
 			}
 
-			// Send notification using V3 if enabled, otherwise V2
-			// This allows safe rollout with feature flag
-			var resp *services.SendResponse
-			var err error
-			if enableV3 && notifyServiceV3 != nil {
-				resp, err = notifyServiceV3.Send(c.UserContext(), &req)
-			} else {
-				resp, err = notifyServiceV2.Send(c.UserContext(), &req)
-			}
+			// Send notification using channel registry
+			resp, err := notifyService.Send(c.UserContext(), &req)
 			if err != nil {
 				appLogger.Logger.Error().
 					Err(err).

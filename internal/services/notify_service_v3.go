@@ -32,7 +32,7 @@ func NewNotifyServiceV3(cfg *config.Config, credentialResolver *CredentialResolv
 }
 
 // Send sends a notification through the channel registry
-// This method replaces the hardcoded switch statements in V2 with dynamic channel lookup
+// This method uses dynamic channel lookup instead of hardcoded switch statements
 func (s *NotifyServiceV3) Send(ctx context.Context, req *SendRequest) (*SendResponse, error) {
 	// Extract tenant from context
 	tenant, ok := tenantctx.GetTenant(ctx)

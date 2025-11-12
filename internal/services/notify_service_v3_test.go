@@ -187,8 +187,8 @@ func TestNotifyServiceV3_ChannelRegistry_Integration(t *testing.T) {
 	})
 }
 
-func TestNotifyServiceV3_Backward_Compatibility(t *testing.T) {
-	// This test ensures V3 has the same interface as V2
+func TestNotifyServiceV3_Interface_Compatibility(t *testing.T) {
+	// This test ensures V3 maintains stable interface
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
 			Email: config.EmailAdapterConfig{
@@ -203,17 +203,13 @@ func TestNotifyServiceV3_Backward_Compatibility(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
+	service := services.NewNotifyServiceV3(cfg, nil, logger)
 
-	// Create both V2 and V3 services
-	serviceV2 := services.NewNotifyServiceV2(cfg, nil, logger)
-	serviceV3 := services.NewNotifyServiceV3(cfg, nil, logger)
-
-	// Verify both services have the same Send method signature
-	if serviceV2 == nil || serviceV3 == nil {
-		t.Fatal("Services should not be nil")
+	if service == nil {
+		t.Fatal("Service should not be nil")
 	}
 
-	// Both should accept the same request type
+	// Verify service accepts standard request type
 	ctx := context.Background()
 	req := &services.SendRequest{
 		Channel: "email",
@@ -222,12 +218,10 @@ func TestNotifyServiceV3_Backward_Compatibility(t *testing.T) {
 		Body:    "Test",
 	}
 
-	// Both should return errors for invalid input
-	_, errV2 := serviceV2.Send(ctx, req)
-	_, errV3 := serviceV3.Send(ctx, req)
-
-	if errV2 == nil || errV3 == nil {
-		t.Error("Both services should return validation errors")
+	// Should return error for invalid input
+	_, err := service.Send(ctx, req)
+	if err == nil {
+		t.Error("Service should return validation errors for invalid input")
 	}
 }
 
@@ -262,7 +256,8 @@ func BenchmarkNotifyServiceV3_Send(b *testing.B) {
 	}
 }
 
-func BenchmarkNotifyServiceV2_vs_V3(b *testing.B) {
+func BenchmarkNotifyService_ChannelLookup(b *testing.B) {
+	// Benchmark channel registry lookup performance
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
 			Email: config.EmailAdapterConfig{
@@ -278,26 +273,28 @@ func BenchmarkNotifyServiceV2_vs_V3(b *testing.B) {
 
 	logger := zerolog.Nop()
 	ctx := context.Background()
-	req := &services.SendRequest{
-		Channel: "email",
-		To:      "invalid",
-		Subject: "Test",
-		Body:    "Test",
+
+	tests := []struct {
+		name    string
+		channel string
+	}{
+		{"Email", "email"},
+		{"SMS", "sms"},
+		{"WhatsApp", "whatsapp"},
 	}
 
-	b.Run("V2", func(b *testing.B) {
-		serviceV2 := services.NewNotifyServiceV2(cfg, nil, logger)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = serviceV2.Send(ctx, req)
-		}
-	})
-
-	b.Run("V3", func(b *testing.B) {
-		serviceV3 := services.NewNotifyServiceV3(cfg, nil, logger)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = serviceV3.Send(ctx, req)
-		}
-	})
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			service := services.NewNotifyServiceV3(cfg, nil, logger)
+			req := &services.SendRequest{
+				Channel: services.Channel(tt.channel),
+				To:      "invalid",
+				Body:    "Test",
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = service.Send(ctx, req)
+			}
+		})
+	}
 }
