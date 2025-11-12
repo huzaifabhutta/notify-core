@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestNotifyServiceV3_Creation(t *testing.T) {
+func TestNotifyService_Creation(t *testing.T) {
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
 			Email: config.EmailAdapterConfig{
@@ -27,14 +27,14 @@ func TestNotifyServiceV3_Creation(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	service := services.NewNotifyServiceV3(cfg, nil, logger)
+	service := services.NewNotifyService(cfg, nil, logger)
 
 	if service == nil {
 		t.Fatal("Expected non-nil service")
 	}
 }
 
-func TestNotifyServiceV3_Send_ValidationErrors(t *testing.T) {
+func TestNotifyService_Send_ValidationErrors(t *testing.T) {
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
 			Email: config.EmailAdapterConfig{
@@ -49,7 +49,7 @@ func TestNotifyServiceV3_Send_ValidationErrors(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	service := services.NewNotifyServiceV3(cfg, nil, logger)
+	service := services.NewNotifyService(cfg, nil, logger)
 
 	tests := []struct {
 		name    string
@@ -105,7 +105,7 @@ func TestNotifyServiceV3_Send_ValidationErrors(t *testing.T) {
 	}
 }
 
-func TestNotifyServiceV3_ChannelRegistry_Integration(t *testing.T) {
+func TestNotifyService_ChannelRegistry_Integration(t *testing.T) {
 	// This test verifies that V3 service correctly uses the channel registry
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
@@ -135,7 +135,7 @@ func TestNotifyServiceV3_ChannelRegistry_Integration(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	service := services.NewNotifyServiceV3(cfg, nil, logger)
+	service := services.NewNotifyService(cfg, nil, logger)
 
 	// Test email channel configuration
 	t.Run("email channel config", func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestNotifyServiceV3_ChannelRegistry_Integration(t *testing.T) {
 	})
 }
 
-func TestNotifyServiceV3_Interface_Compatibility(t *testing.T) {
+func TestNotifyService_Interface_Compatibility(t *testing.T) {
 	// This test ensures V3 maintains stable interface
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
@@ -203,7 +203,7 @@ func TestNotifyServiceV3_Interface_Compatibility(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	service := services.NewNotifyServiceV3(cfg, nil, logger)
+	service := services.NewNotifyService(cfg, nil, logger)
 
 	if service == nil {
 		t.Fatal("Service should not be nil")
@@ -225,7 +225,7 @@ func TestNotifyServiceV3_Interface_Compatibility(t *testing.T) {
 	}
 }
 
-func BenchmarkNotifyServiceV3_Send(b *testing.B) {
+func BenchmarkNotifyService_Send(b *testing.B) {
 	cfg := &config.Config{
 		Adapters: config.AdaptersConfig{
 			Email: config.EmailAdapterConfig{
@@ -240,7 +240,7 @@ func BenchmarkNotifyServiceV3_Send(b *testing.B) {
 	}
 
 	logger := zerolog.Nop()
-	service := services.NewNotifyServiceV3(cfg, nil, logger)
+	service := services.NewNotifyService(cfg, nil, logger)
 
 	ctx := context.Background()
 	req := &services.SendRequest{
@@ -285,7 +285,7 @@ func BenchmarkNotifyService_ChannelLookup(b *testing.B) {
 
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			service := services.NewNotifyServiceV3(cfg, nil, logger)
+			service := services.NewNotifyService(cfg, nil, logger)
 			req := &services.SendRequest{
 				Channel: services.Channel(tt.channel),
 				To:      "invalid",

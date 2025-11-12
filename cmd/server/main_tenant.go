@@ -71,9 +71,9 @@ func setupTenantRoutes(app *fiber.App, cfg *config.Config) error {
 
 	credentialResolver := services.NewCredentialResolver(cfg)
 
-	// Use NotifyServiceV3 with channel registry
-	// This provides pluggable channel architecture for easy extensibility
-	notifyService := services.NewNotifyServiceV3(cfg, credentialResolver, appLogger.Logger)
+	// Use channel registry for pluggable architecture
+	// This provides easy extensibility - add new channels by registering them
+	notifyService := services.NewNotifyService(cfg, credentialResolver, appLogger.Logger)
 	appLogger.Logger.Info().Msg("🚀 Channel Registry enabled - using pluggable channel architecture")
 
 	// Initialize health checker
