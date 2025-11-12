@@ -9,6 +9,7 @@ import (
 	"github.com/huzaifabhutta/notify-core/internal/channels/sms"
 	"github.com/huzaifabhutta/notify-core/internal/channels/whatsapp"
 	"github.com/huzaifabhutta/notify-core/internal/config"
+	"github.com/huzaifabhutta/notify-core/internal/models"
 	"github.com/huzaifabhutta/notify-core/internal/tenantctx"
 	"github.com/rs/zerolog"
 )
@@ -105,7 +106,11 @@ func (s *NotifyServiceV3) Send(ctx context.Context, req *SendRequest) (*SendResp
 	resp := &SendResponse{
 		MessageID: channelResp.MessageID,
 		Channel:   string(req.Channel),
-		Source:    channelResp.Metadata["source"],
+	}
+
+	// Add source from metadata if available
+	if source, ok := channelResp.Metadata["source"]; ok {
+		resp.Source = source
 	}
 
 	// Add tenant info if available
@@ -217,9 +222,11 @@ func getTenantName(tenant interface{}) string {
 	if tenant == nil {
 		return "global"
 	}
-	// Type assertion to get tenant name
-	// This is a simplification - in production, you'd use proper type assertion
-	return "tenant"
+	// Proper type assertion to get tenant name
+	if t, ok := tenant.(*models.Tenant); ok && t != nil {
+		return t.Name
+	}
+	return "unknown"
 }
 
 // Credential resolver adapters
@@ -231,9 +238,29 @@ type emailCredentialResolver struct {
 }
 
 func (r *emailCredentialResolver) ResolveEmail(ctx context.Context) (*email.EmailCredentials, error) {
-	// For now, return nil to use default configuration
-	// In a full implementation, this would resolve tenant-specific credentials
-	return nil, nil
+	// Type assert tenant to proper type
+	var tenant *models.Tenant
+	if r.tenant != nil {
+		if t, ok := r.tenant.(*models.Tenant); ok {
+			tenant = t
+		}
+	}
+
+	// Resolve credentials using service's credential resolver
+	creds, err := r.resolver.ResolveEmailCredentials(tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert from services.SMTPCredentials to email.EmailCredentials
+	return &email.EmailCredentials{
+		Host:     creds.Host,
+		Port:     creds.Port,
+		User:     creds.User,
+		Password: creds.Password,
+		From:     creds.From,
+		Source:   creds.Source,
+	}, nil
 }
 
 type smsCredentialResolver struct {
@@ -242,9 +269,27 @@ type smsCredentialResolver struct {
 }
 
 func (r *smsCredentialResolver) ResolveSMS(ctx context.Context) (*sms.SMSCredentials, error) {
-	// For now, return nil to use default configuration
-	// In a full implementation, this would resolve tenant-specific credentials
-	return nil, nil
+	// Type assert tenant to proper type
+	var tenant *models.Tenant
+	if r.tenant != nil {
+		if t, ok := r.tenant.(*models.Tenant); ok {
+			tenant = t
+		}
+	}
+
+	// Resolve credentials using service's credential resolver
+	creds, err := r.resolver.ResolveSMSCredentials(tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert from services.SMSCredentials to sms.SMSCredentials
+	// Note: The SMS channel credentials only include Provider and Source
+	// The actual API keys and sender IDs come from the channel config
+	return &sms.SMSCredentials{
+		Provider: creds.Provider,
+		Source:   creds.Source,
+	}, nil
 }
 
 type whatsappCredentialResolver struct {
@@ -253,7 +298,24 @@ type whatsappCredentialResolver struct {
 }
 
 func (r *whatsappCredentialResolver) ResolveWhatsApp(ctx context.Context) (*whatsapp.WhatsAppCredentials, error) {
-	// For now, return nil to use default configuration
-	// In a full implementation, this would resolve tenant-specific credentials
-	return nil, nil
+	// Type assert tenant to proper type
+	var tenant *models.Tenant
+	if r.tenant != nil {
+		if t, ok := r.tenant.(*models.Tenant); ok {
+			tenant = t
+		}
+	}
+
+	// Resolve credentials using service's credential resolver
+	creds, err := r.resolver.ResolveWhatsAppCredentials(tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert from services.WhatsAppCredentials to whatsapp.WhatsAppCredentials
+	return &whatsapp.WhatsAppCredentials{
+		Token:   creds.Token,
+		PhoneID: creds.PhoneID,
+		Source:  creds.Source,
+	}, nil
 }
