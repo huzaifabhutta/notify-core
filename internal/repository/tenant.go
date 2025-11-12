@@ -62,23 +62,27 @@ func (r *TenantRepository) Create(ctx context.Context, req *models.CreateTenantR
 		plainAPIKey = uuid.New().String()
 
 		// Hash API key for storage
-		hashedAPIKey, err := security.HashAPIKey(plainAPIKey)
+		var hashedAPIKey string
+		hashedAPIKey, err = security.HashAPIKey(plainAPIKey)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to hash API key: %w", err)
 		}
 
 		// Encrypt sensitive credentials
-		encryptedSMTPPassword, err := security.EncryptIfNotEmpty(req.SMTPPassword, r.encryptionKey)
+		var encryptedSMTPPassword string
+		encryptedSMTPPassword, err = security.EncryptIfNotEmpty(req.SMTPPassword, r.encryptionKey)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to encrypt SMTP password: %w", err)
 		}
 
-		encryptedWAToken, err := security.EncryptIfNotEmpty(req.WAToken, r.encryptionKey)
+		var encryptedWAToken string
+		encryptedWAToken, err = security.EncryptIfNotEmpty(req.WAToken, r.encryptionKey)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to encrypt WhatsApp token: %w", err)
 		}
 
-		encryptedSMSAPIKey, err := security.EncryptIfNotEmpty(req.SMSAPIKey, r.encryptionKey)
+		var encryptedSMSAPIKey string
+		encryptedSMSAPIKey, err = security.EncryptIfNotEmpty(req.SMSAPIKey, r.encryptionKey)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to encrypt SMS API key: %w", err)
 		}

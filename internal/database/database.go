@@ -81,5 +81,5 @@ func (db *DB) Ping(ctx context.Context) error {
 
 // BeginTx starts a new transaction
 func (db *DB) BeginTx(ctx context.Context) (*sql.Tx, error) {
-	return db.DB.BeginTxContext(ctx, nil)
+	return db.DB.BeginTx(ctx, nil)
 }
