@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,6 +26,7 @@ import (
 	"github.com/huzaifabhutta/notify-core/internal/health"
 	appLogger "github.com/huzaifabhutta/notify-core/internal/logger"
 	"github.com/huzaifabhutta/notify-core/internal/middleware"
+	"github.com/huzaifabhutta/notify-core/internal/models"
 	"github.com/huzaifabhutta/notify-core/internal/repository"
 	"github.com/huzaifabhutta/notify-core/internal/services"
 	"github.com/huzaifabhutta/notify-core/internal/tenantctx"
@@ -47,6 +49,16 @@ func initializeDatabase(cfg *config.Config) (*database.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Validate database connection with ping
+	appLogger.Logger.Info().Msg("Validating database connection...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("database connection validation failed: %w", err)
+	}
+	appLogger.Logger.Info().Msg("Database connection validated successfully")
 
 	// Run migrations automatically on startup
 	appLogger.Logger.Info().Msg("Running database migrations...")

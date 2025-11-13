@@ -70,6 +70,7 @@ type SendResponse struct {
 type NotifyService struct {
 	config             *config.Config
 	credentialResolver *CredentialResolver
+	sanitizer          *Sanitizer
 	logger             zerolog.Logger
 }
 
@@ -78,6 +79,7 @@ func NewNotifyService(cfg *config.Config, credentialResolver *CredentialResolver
 	return &NotifyService{
 		config:             cfg,
 		credentialResolver: credentialResolver,
+		sanitizer:          NewSanitizer(),
 		logger:             logger.With().Str("service", "notify").Logger(),
 	}
 }
@@ -105,8 +107,8 @@ func (s *NotifyService) Send(ctx context.Context, req *SendRequest) (*SendRespon
 	default:
 	}
 
-	// Validate request thoroughly to prevent attacks
-	if err := s.validateRequest(req); err != nil {
+	// Validate and sanitize request thoroughly to prevent attacks
+	if err := s.validateAndSanitizeRequest(req); err != nil {
 		s.logger.Warn().
 			Err(err).
 			Str("channel", string(req.Channel)).
@@ -388,8 +390,9 @@ func (r *whatsappCredentialResolver) ResolveWhatsApp(ctx context.Context) (*what
 	}, nil
 }
 
-// validateRequest performs comprehensive request validation to prevent attacks and resource exhaustion
-func (s *NotifyService) validateRequest(req *SendRequest) error {
+// validateAndSanitizeRequest performs comprehensive request validation and sanitization
+// to prevent attacks, resource exhaustion, and XSS vulnerabilities
+func (s *NotifyService) validateAndSanitizeRequest(req *SendRequest) error {
 	// Basic required fields
 	if req.Channel == "" {
 		return fmt.Errorf("channel is required")
@@ -413,6 +416,40 @@ func (s *NotifyService) validateRequest(req *SendRequest) error {
 	}
 	if len(req.Template) > MaxTemplateNameLength {
 		return fmt.Errorf("template name exceeds maximum length of %d characters", MaxTemplateNameLength)
+	}
+
+	// Security validation - check for script injection attempts
+	if !s.sanitizer.ValidateNoScriptInjection(req.Body) {
+		return fmt.Errorf("body contains potentially malicious content (script injection detected)")
+	}
+	if !s.sanitizer.ValidateNoScriptInjection(req.Subject) {
+		return fmt.Errorf("subject contains potentially malicious content (script injection detected)")
+	}
+
+	// Sanitize inputs to prevent XSS and injection attacks
+	if req.Channel == ChannelEmail {
+		// Sanitize email-specific fields
+		req.To = s.sanitizer.SanitizeEmail(req.To)
+		if req.From != "" {
+			req.From = s.sanitizer.SanitizeEmail(req.From)
+		}
+		req.Subject = s.sanitizer.SanitizeSubject(req.Subject)
+
+		// Sanitize HTML body for email
+		if req.Body != "" {
+			req.Body = s.sanitizer.SanitizeHTML(req.Body)
+		}
+	} else if req.Channel == ChannelSMS || req.Channel == ChannelWhatsApp {
+		// Sanitize phone numbers
+		req.To = s.sanitizer.SanitizePhoneNumber(req.To)
+		if req.From != "" {
+			req.From = s.sanitizer.SanitizePhoneNumber(req.From)
+		}
+	}
+
+	// Sanitize template data to prevent XSS in templated content
+	if req.Data != nil {
+		req.Data = s.sanitizer.SanitizeTemplateData(req.Data)
 	}
 
 	// Attachment validation - CRITICAL for preventing DoS attacks
