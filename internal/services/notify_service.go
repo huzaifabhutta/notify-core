@@ -153,12 +153,14 @@ func (s *NotifyService) Send(ctx context.Context, req *SendRequest) (*SendRespon
 	// Send via channel
 	channelResp, err := channel.Send(ctx, channelReq)
 	if err != nil {
+		// Sanitize error to prevent credential exposure in logs/responses
+		sanitizedErr := SanitizeError(err)
 		s.logger.Error().
-			Err(err).
+			Err(sanitizedErr).
 			Str("channel", string(req.Channel)).
 			Str("tenant", getTenantName(tenant)).
 			Msg("Failed to send via channel")
-		return nil, fmt.Errorf("channel send failed: %w", err)
+		return nil, fmt.Errorf("channel send failed: %w", sanitizedErr)
 	}
 
 	s.logger.Info().
