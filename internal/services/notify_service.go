@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/huzaifabhutta/notify-core/internal/channels"
 	"github.com/huzaifabhutta/notify-core/internal/channels/email"
@@ -12,6 +13,19 @@ import (
 	"github.com/huzaifabhutta/notify-core/internal/models"
 	"github.com/huzaifabhutta/notify-core/internal/tenantctx"
 	"github.com/rs/zerolog"
+)
+
+// Size and validation constants to prevent DoS attacks and resource exhaustion
+const (
+	MaxAttachmentSize     = 25 * 1024 * 1024  // 25MB per attachment
+	MaxAttachments        = 10                 // Maximum 10 attachments per request
+	MaxTotalAttachments   = 50 * 1024 * 1024  // 50MB total attachments per request
+	MaxSubjectLength      = 998                // RFC 5322 limit
+	MaxBodyLength         = 10 * 1024 * 1024  // 10MB max body size
+	MaxFromLength         = 320                // Max email address length (RFC 5321)
+	MaxToLength           = 320                // Max recipient length
+	MaxTemplateNameLength = 255                // Max template name length
+	DefaultRequestTimeout = 30 * time.Second  // Default timeout for operations
 )
 
 // Channel represents a notification channel type
@@ -77,12 +91,27 @@ func (s *NotifyService) Send(ctx context.Context, req *SendRequest) (*SendRespon
 		s.logger.Warn().Msg("No tenant found in context, using global configuration")
 	}
 
-	// Validate request
-	if req.Channel == "" {
-		return nil, fmt.Errorf("channel is required")
+	// Enforce request timeout to prevent hanging
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		ctx, cancel = context.WithTimeout(ctx, DefaultRequestTimeout)
+		defer cancel()
 	}
-	if req.To == "" {
-		return nil, fmt.Errorf("recipient (to) is required")
+
+	// Check if context is already cancelled/expired
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("request context cancelled: %w", ctx.Err())
+	default:
+	}
+
+	// Validate request thoroughly to prevent attacks
+	if err := s.validateRequest(req); err != nil {
+		s.logger.Warn().
+			Err(err).
+			Str("channel", string(req.Channel)).
+			Msg("Request validation failed")
+		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
 	// Log the send attempt
@@ -355,4 +384,70 @@ func (r *whatsappCredentialResolver) ResolveWhatsApp(ctx context.Context) (*what
 		PhoneID: creds.PhoneID,
 		Source:  creds.Source,
 	}, nil
+}
+
+// validateRequest performs comprehensive request validation to prevent attacks and resource exhaustion
+func (s *NotifyService) validateRequest(req *SendRequest) error {
+	// Basic required fields
+	if req.Channel == "" {
+		return fmt.Errorf("channel is required")
+	}
+	if req.To == "" {
+		return fmt.Errorf("recipient (to) is required")
+	}
+
+	// Length validations to prevent memory exhaustion
+	if len(req.To) > MaxToLength {
+		return fmt.Errorf("recipient exceeds maximum length of %d characters", MaxToLength)
+	}
+	if len(req.From) > MaxFromLength {
+		return fmt.Errorf("from address exceeds maximum length of %d characters", MaxFromLength)
+	}
+	if len(req.Subject) > MaxSubjectLength {
+		return fmt.Errorf("subject exceeds maximum length of %d characters", MaxSubjectLength)
+	}
+	if len(req.Body) > MaxBodyLength {
+		return fmt.Errorf("body exceeds maximum length of %d bytes", MaxBodyLength)
+	}
+	if len(req.Template) > MaxTemplateNameLength {
+		return fmt.Errorf("template name exceeds maximum length of %d characters", MaxTemplateNameLength)
+	}
+
+	// Attachment validation - CRITICAL for preventing DoS attacks
+	if len(req.Attachments) > MaxAttachments {
+		return fmt.Errorf("too many attachments: maximum %d allowed, got %d", MaxAttachments, len(req.Attachments))
+	}
+
+	totalSize := 0
+	for i, att := range req.Attachments {
+		// Validate attachment has required fields
+		if att.Filename == "" {
+			return fmt.Errorf("attachment %d: filename is required", i)
+		}
+		if len(att.Content) == 0 {
+			return fmt.Errorf("attachment %d: content is required", i)
+		}
+
+		// Validate attachment size
+		attSize := len(att.Content)
+		if attSize > MaxAttachmentSize {
+			return fmt.Errorf("attachment %d (%s) exceeds maximum size of %d MB (got %d bytes)",
+				i, att.Filename, MaxAttachmentSize/(1024*1024), attSize)
+		}
+
+		totalSize += attSize
+	}
+
+	// Validate total attachments size
+	if totalSize > MaxTotalAttachments {
+		return fmt.Errorf("total attachments size exceeds maximum of %d MB (got %d bytes)",
+			MaxTotalAttachments/(1024*1024), totalSize)
+	}
+
+	// Content requirement validation
+	if req.Template == "" && req.Body == "" {
+		return fmt.Errorf("either template or body is required")
+	}
+
+	return nil
 }

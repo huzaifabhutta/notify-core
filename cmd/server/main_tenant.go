@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -273,11 +275,15 @@ func RunTenantMode() {
 
 	appLogger.Logger.Info().Msg("Configuration loaded and validated successfully")
 
-	// Create Fiber app
+	// Create Fiber app with security settings
 	app := fiber.New(fiber.Config{
 		AppName:      "Notify-Core v2.0 (Multi-Tenant)",
-		ServerHeader: "",
+		ServerHeader: "",                      // Hide server header for security
 		ErrorHandler: customErrorHandler,
+		BodyLimit:    50 * 1024 * 1024,       // 50MB max request body (prevents DoS)
+		ReadTimeout:  60 * time.Second,       // Timeout for reading request
+		WriteTimeout: 60 * time.Second,       // Timeout for writing response
+		IdleTimeout:  120 * time.Second,      // Close idle connections
 	})
 
 	// Global middleware
@@ -349,14 +355,32 @@ func RunTenantMode() {
 		appLogger.Logger.Fatal().Err(err).Msg("Failed to setup tenant routes")
 	}
 
-	// Start server
+	// Start server with graceful shutdown
 	port := cfg.Server.Port
 	appLogger.Logger.Info().
 		Str("port", port).
 		Str("mode", "multi-tenant").
 		Msg("Starting notify-core server")
 
-	if err := app.Listen(":" + port); err != nil {
-		appLogger.Logger.Fatal().Err(err).Msg("Server failed to start")
+	// Channel to listen for shutdown signals
+	shutdownChan := make(chan os.Signal, 1)
+	signal.Notify(shutdownChan, os.Interrupt, syscall.SIGTERM)
+
+	// Start server in goroutine
+	go func() {
+		if err := app.Listen(":" + port); err != nil {
+			appLogger.Logger.Fatal().Err(err).Msg("Server failed to start")
+		}
+	}()
+
+	// Block until shutdown signal received
+	<-shutdownChan
+	appLogger.Logger.Info().Msg("Shutdown signal received, starting graceful shutdown...")
+
+	// Graceful shutdown with 30 second timeout
+	if err := app.ShutdownWithTimeout(30 * time.Second); err != nil {
+		appLogger.Logger.Error().Err(err).Msg("Error during graceful shutdown")
 	}
+
+	appLogger.Logger.Info().Msg("Server shutdown complete")
 }
